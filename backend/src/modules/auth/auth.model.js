@@ -1,5 +1,7 @@
 ﻿import crypto from "node:crypto";
 import pool from "../../config/db.js";
+import userModel from "../users/user.model.js";
+import ApiError from "../../utils/ApiError.js";
 
 const SAFE_USER_FIELDS = `u.id, u.name AS name, u.email, u.mobile,
   u.role_id, u.company_id, u.parent_id AS parent_id, u.status,
@@ -35,7 +37,7 @@ async function findUserByIdentifier(identifier, type) {
   const [rows] = await pool.execute(
     `SELECT
        ${SAFE_USER_FIELDS},
-       u.password_hash,
+       u.password_hash, u.email_verified_at, u.mobile_verified_at,
        k.id AS kyc_case_id,
        k.status AS kyc_status,
        k.steps_completed AS kyc_steps_completed,
@@ -72,6 +74,47 @@ async function findUserByIdentifier(identifier, type) {
   };
 }
 
+
+async function findLoginAccountById(userId) {
+  const [rows] = await pool.execute(
+    `SELECT id, role_id, password_hash, status FROM users WHERE id = ? LIMIT 1`,
+    [userId],
+  );
+  return rows[0] || null;
+}
+
+async function registerCustomer({ name, email, mobile, passwordHash }) {
+  const connection = await getConnection();
+  try {
+    await connection.beginTransaction();
+    const [schemes] = await connection.execute(
+      "SELECT id FROM schemes WHERE id = 1 AND status = 1 FOR SHARE",
+    );
+    if (!schemes[0]) {
+      throw new ApiError(503, "Default customer scheme is unavailable", "SERVICE_UNAVAILABLE");
+    }
+    const duplicate = await userModel.checkDuplicateUser({ email, mobile }, connection);
+    if (duplicate) {
+      throw new ApiError(409, "An account with this email or mobile already exists", "DUPLICATE_ENTRY");
+    }
+    const userId = await userModel.insertUser({
+      name, email, mobile, passwordHash,
+      roleId: 2, companyId: 1, schemeId: schemes[0].id, parentId: null,
+    }, connection);
+    await connection.execute("INSERT INTO user_wallets (user_id) VALUES (?)", [userId]);
+    await userModel.initKycCaseForUser({ userId, actorId: userId }, connection);
+    await connection.commit();
+    return { id: userId };
+  } catch (error) {
+    await connection.rollback().catch(() => {});
+    if (error.code === "ER_DUP_ENTRY") {
+      throw new ApiError(409, "An account with this email or mobile already exists", "DUPLICATE_ENTRY");
+    }
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
 
 async function findActiveUserById(userId) {
   const [rows] = await pool.execute(
@@ -450,6 +493,8 @@ const authModel = {
   findPasswordHashForUpdate,
   updatePasswordHash,
   findUserByIdentifier,
+  findLoginAccountById,
+  registerCustomer,
   findActiveUserById,
   isUserActive,
   isAdmin,
@@ -465,6 +510,8 @@ export {
   findPasswordHashForUpdate,
   updatePasswordHash,
   findUserByIdentifier,
+  findLoginAccountById,
+  registerCustomer,
   findActiveUserById,
   isUserActive,
   isAdmin,

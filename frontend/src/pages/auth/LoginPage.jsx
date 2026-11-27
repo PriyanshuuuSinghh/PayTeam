@@ -1,349 +1,167 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Eye, EyeOff, ChevronLeft, ChevronRight } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { LockKeyhole, Mail, ShieldCheck, X, RotateCw } from "lucide-react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { LightAnimatedBackground } from "../../components/common/LightAnimatedBackground";
 import { ErrorAlert } from "../../components/common/ErrorAlert";
 import { parseApiError } from "../../utils/errorHandler";
-import { authenticateWithMe, getCurrentUser } from "../../api/auth.api";
+import { authenticateWithMe, getCurrentUser, verifyLoginOtp, resendLoginOtp } from "../../api/auth.api";
+import { useAuth } from "../../context/AuthContext";
 import { isAdminRole, isNormalUserRole } from "../../constants/roles";
+import { AuthShell, AuthHeading, AuthField, AuthButton, AuthSuccess } from "./AuthShell";
 
 const schema = z.object({
-  email: z.string().min(1, "Please enter your email or username"),
+  email: z.string().trim().min(1, "Please enter your email"),
   password: z.string().min(1, "Please enter your password"),
-  rememberMe: z.boolean().optional(),
 });
+const routeFor = (user) => isAdminRole(user) ? "/admin/dashboard" : "/user/dashboard";
+const formatTime = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
-const SLIDES = [
-  "/slide-utility-pay.jpg",
-  "/slide-merchant-analytics.jpg",
-  "/slide-bulk-batch.jpg",
-];
+function OtpDialog({ otp, setOtp, remaining, duration, resendWait, busy, error, dismissError, onVerify, onResend, onBack, success }) {
+  const dialog = useRef(null);
+  const input = useRef(null);
+  const [closing, setClosing] = useState(false);
+  const exitTimer = useRef(null);
+  const requestClose = () => {
+    if (busy || success || closing) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) { onBack(); return; }
+    setClosing(true);
+    exitTimer.current = setTimeout(onBack, 250);
+  };
+  useEffect(() => () => clearTimeout(exitTimer.current), []);
+  useEffect(() => {
+    if (!success || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const timer = setTimeout(() => setClosing(true), 550);
+    return () => clearTimeout(timer);
+  }, [success]);
+  useEffect(() => {
+    const element = dialog.current;
+    element.showModal();
+    input.current?.focus();
+    return () => { if (element.open) element.close(); };
+  }, []);
+  return (
+    <dialog ref={dialog} className={`pt-otp-dialog ${closing ? "pt-closing" : ""}`} aria-labelledby="pt-otp-title" onCancel={(event) => { event.preventDefault(); requestClose(); }}>
+      {success ? <AuthSuccess id="pt-otp-title" title="You're signed in" description="Opening your PayTeam account…" /> : <>
+        <button type="button" className="pt-dialog-close" aria-label="Close verification" disabled={busy || closing} onClick={requestClose}><X size={21}/></button>
+        <div className="pt-otp-icon"><ShieldCheck size={36} strokeWidth={1.6} /></div>
+        <div className="pt-heading"><h1 id="pt-otp-title">Verify sign-in</h1><p>Enter your six-digit code to finish signing in.</p></div>
+        <form className="pt-form" onSubmit={onVerify}>
+          <ErrorAlert error={error} onDismiss={dismissError} />
+          <div className="pt-field"><label htmlFor="login-otp">Verification code</label><div className="pt-otp-code">
+            <input ref={input} id="login-otp" type="text" inputMode="numeric" autoComplete="one-time-code" value={otp} onChange={event => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))} onPaste={event => { event.preventDefault(); setOtp(event.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6)); }} disabled={busy || closing || remaining === 0} aria-describedby="pt-otp-expiry" />
+            {Array.from({length:6}, (_, i) => <span aria-hidden="true" key={i} className={`pt-otp-cell ${otp[i] ? "is-filled" : ""} ${i === Math.min(otp.length, 5) ? "is-current" : ""}`}>{otp[i] || "–"}</span>)}
+          </div></div>
+          <div className="pt-otp-meta" id="pt-otp-expiry"><span>{remaining ? "Code expires in" : "Code expired. Sign in again."}</span><strong>{formatTime(remaining)}</strong></div>
+          <div className="pt-otp-progress" aria-hidden="true"><span style={{width:`${Math.min(100, Math.max(0, remaining / Math.max(duration, 1) * 100))}%`}} /></div>
+          <AuthButton busy={busy} disabled={closing || remaining === 0 || otp.length !== 6}>{busy ? "Verifying…" : "Verify and sign in"}</AuthButton>
+          <div className="pt-otp-actions"><button type="button" disabled={busy || closing} onClick={requestClose}>← Back to login</button><button type="button" disabled={busy || closing || resendWait > 0 || remaining === 0} onClick={onResend}><RotateCw size={14}/> {resendWait ? `Resend in ${resendWait}s` : "Resend code"}</button></div>
+          {import.meta.env.DEV && <p className="pt-note">Development only: use the OTP generated in your backend terminal.</p>}
+        </form>
+      </>}
+    </dialog>
+  );
+}
 
 export const LoginPage = () => {
-  const [showPw, setShowPw] = useState(false);
-  const [currentSlide, setCurrentSlide] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [apiError, setApiError] = useState(null);
+  const [challenge, setChallenge] = useState(null);
+  const [otp, setOtp] = useState("");
+  const [remaining, setRemaining] = useState(0);
+  const [resendWait, setResendWait] = useState(0);
+  const [successRoute, setSuccessRoute] = useState(null);
+  const busyRef = useRef(false);
   const navigate = useNavigate();
+  const location = useLocation();
+  const { verifySession, clearSession } = useAuth();
+  const { register, handleSubmit, resetField, formState: { errors } } = useForm({ resolver: zodResolver(schema), defaultValues: { email: typeof location.state?.email === "string" ? location.state.email : "", password: "" } });
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm({
-    resolver: zodResolver(schema),
-    defaultValues: {
-      email: "",
-      password: "",
-      rememberMe: true,
-    },
-  });
-
-  // Auto-play slideshow timer (every 3.5 seconds)
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentSlide((prev) => (prev + 1) % SLIDES.length);
-    }, 2500);
-    return () => clearInterval(timer);
-  }, []);
-
-  // Verify existing sessions from the server and route by the authoritative role.
-  useEffect(() => {
-    const token = localStorage.getItem("accessToken");
-    if (!token) return;
-    getCurrentUser().then((response) => {
+    if (!localStorage.getItem("accessToken")) return;
+    let cancelled = false;
+    getCurrentUser().then(response => {
       const user = response?.data || response;
-      if (isAdminRole(user)) navigate("/admin/dashboard", { replace: true });
-      else if (isNormalUserRole(user)) {
-        const kycDone = ["approved", "completed", "verified", "submitted"].includes(String(user?.kyc?.status || "").toLowerCase());
-        navigate(kycDone ? "/user/dashboard" : "/kyc", { replace: true });
-      }
+      if (!cancelled && (isAdminRole(user) || isNormalUserRole(user))) navigate(routeFor(user), { replace: true });
     }).catch(() => {});
+    return () => { cancelled = true; };
   }, [navigate]);
 
-  const onSubmit = async (data) => {
-    try {
-      setIsLoading(true);
-      setApiError(null);
+  useEffect(() => {
+    if (!challenge) return;
+    const update = () => {
+      setRemaining(Math.max(0, Math.ceil((challenge.deadline - Date.now()) / 1000)));
+      setResendWait(Math.max(0, Math.ceil((challenge.resendAt - Date.now()) / 1000)));
+    };
+    update();
+    const timer = setInterval(update, 250);
+    return () => clearInterval(timer);
+  }, [challenge]);
 
-      // 1. Shared authentication via POST /api/auth/login + GET /api/auth/me
-      const { accessToken, user } = await authenticateWithMe({
-        identifier: data.email.trim(),
-        password: data.password,
-      });
+  useEffect(() => {
+    if (!successRoute) return;
+    const timer = setTimeout(() => navigate(successRoute, { replace: true }), window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 850);
+    return () => clearTimeout(timer);
+  }, [successRoute, navigate]);
 
-      if (!isAdminRole(user) && !isNormalUserRole(user)) {
-        const msg = "Access Denied: Unrecognized account role. Please contact system support.";
-        setApiError({
-          title: "Access Denied",
-          message: msg,
-        });
-        toast.error(msg);
-        return;
-      }
-
-      if (accessToken) {
-        localStorage.setItem("accessToken", accessToken);
-      }
-      if (user) {
-        localStorage.setItem("user", JSON.stringify(user));
-      }
-      if (isAdminRole(user)) localStorage.setItem("adminUser", JSON.stringify(user));
-      else localStorage.removeItem("adminUser");
-
-      toast.success(
-        `Welcome back, ${user?.name || "User"}! Signed in successfully.`
-      );
-
-      if (isAdminRole(user)) {
-        navigate("/admin/dashboard", { replace: true });
-        return;
-      }
-
-      // KYC Status Check for normal users
-      const isKycDone =
-        user?.kyc &&
-        ["approved", "completed", "verified", "submitted"].includes(
-          String(user.kyc.status || "").toLowerCase()
-        );
-
-      if (!isKycDone) {
-        toast.info("Please complete your KYC verification to access your dashboard.");
-        navigate("/kyc", { replace: true });
-      } else {
-        navigate("/user/dashboard", { replace: true });
-      }
-    } catch (err) {
-      const parsed = parseApiError(err);
-      setApiError(parsed);
-      toast.error(parsed.message);
-    } finally {
-      setIsLoading(false);
-    }
+  const startChallenge = data => {
+    const duration = Number(data.expiresIn);
+    if (!data.loginToken || !Number.isFinite(duration) || duration <= 0) throw new Error("Invalid login challenge");
+    setChallenge({ loginToken: data.loginToken, deadline: Date.now() + duration * 1000, duration, resendAt: Date.now() + 30000 });
+    setRemaining(duration); setResendWait(30); setOtp("");
   };
-
-  const handleForgotPassword = () => {
-    navigate("/forgot-password");
+  const completeLogin = async ({ accessToken, user }) => {
+    if (!accessToken || (!isAdminRole(user) && !isNormalUserRole(user))) throw new Error("Access denied: unrecognized account role");
+    localStorage.setItem("accessToken", accessToken);
+    localStorage.setItem("user", JSON.stringify(user));
+    if (isAdminRole(user)) localStorage.setItem("adminUser", JSON.stringify(user));
+    else localStorage.removeItem("adminUser");
+    await verifySession();
+    toast.success("Signed in successfully.");
+    setOtp(""); setSuccessRoute(routeFor(user));
   };
-
-  const handleTerms = () => {
-    toast.info("PayTeam terms and conditions are not available yet.");
+  const reportError = err => {
+    const parsed = parseApiError(err);
+    if (err?.response?.data?.code === "INVALID_LOGIN_OTP") parsed.message = err.response.data.message;
+    setApiError(parsed);
   };
+  const execute = async action => {
+    if (busyRef.current || successRoute) return;
+    busyRef.current = true; setIsLoading(true); setApiError(null);
+    try { await action(); } catch (err) { reportError(err); }
+    finally { busyRef.current = false; setIsLoading(false); }
+  };
+  const onSubmit = data => execute(async () => {
+    const result = await authenticateWithMe({ identifier: data.email.trim(), password: data.password });
+    if (result.otpRequired) { clearSession(); resetField("password"); startChallenge(result); return; }
+    resetField("password"); await completeLogin(result);
+  });
+  const onVerifyOtp = event => {
+    event.preventDefault();
+    if (!challenge || Date.now() >= challenge.deadline || !/^\d{6}$/.test(otp)) return;
+    return execute(async () => { await completeLogin(await verifyLoginOtp({ loginToken: challenge.loginToken, otp })); });
+  };
+  const onResendOtp = () => {
+    if (!challenge || Date.now() < challenge.resendAt || Date.now() >= challenge.deadline) return;
+    return execute(async () => { startChallenge(await resendLoginOtp(challenge.loginToken)); toast.success("A new OTP has been generated."); });
+  };
+  const onBack = () => { if (!busyRef.current && !successRoute) { setChallenge(null); setOtp(""); setApiError(null); } };
 
-  return (
-    <div className="min-h-screen w-full flex items-center justify-center p-3 sm:p-6 md:p-8 lg:p-12 relative overflow-hidden bg-[#f1f5fa]">
-      {/* Animated Light Color Background */}
-      <LightAnimatedBackground />
-
-      {/* Main Rounded Card Container - clean light aesthetic with soft elevation */}
-      <div className="relative z-10 w-full max-w-[1100px] xl:max-w-[1160px] rounded-[28px] sm:rounded-[36px] lg:rounded-[40px] shadow-[0_20px_60px_-15px_rgba(56,104,176,0.14),0_10px_30px_-10px_rgba(15,23,42,0.06)] border border-slate-200/90 backdrop-blur-md bg-white flex flex-col lg:flex-row overflow-hidden">
-        
-        {/* Left Column: Form */}
-        <div className="w-full lg:w-1/2 bg-white flex flex-col justify-center px-6 py-10 sm:px-12 sm:py-14 md:px-14 lg:py-12">
-          <div className="w-full max-w-[360px] mx-auto">
-            {/* PayTeam Brand */}
-            <div className="mb-6 flex items-center gap-3">
-              <img
-                src="/payteam-mark.svg"
-                alt=""
-                className="h-12 w-12 object-contain select-none"
-              />
-              <span className="text-2xl font-bold tracking-tight text-slate-900">PayTeam</span>
-            </div>
-
-            {/* Header */}
-            <div className="mb-6">
-              <h1 className="text-2xl sm:text-[26px] font-black italic tracking-wide text-slate-900 uppercase font-['Outfit',sans-serif]">
-                WELCOME BACK
-              </h1>
-              <p className="text-[#64748b] text-[13px] mt-1.5 leading-relaxed font-normal">
-                Sign in to manage your PayTeam account and verification securely.
-              </p>
-            </div>
-
-            {/* Form */}
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-              {/* API Error Notification Banner */}
-              <ErrorAlert error={apiError} onDismiss={() => setApiError(null)} />
-
-              {/* Email Field */}
-              <div>
-                <label 
-                  htmlFor="login-email" 
-                  className="block text-[13px] font-medium text-[#4b5563] mb-1.5"
-                >
-                  Email or Mobile No
-                </label>
-                <input
-                  {...register("email")}
-                  id="login-email"
-                  type="text"
-                  placeholder="Enter your username or email"
-                  className={`w-full bg-[#f0f0f2] hover:bg-[#eaebee] focus:bg-white text-[#18181b] placeholder-[#a1a1aa] text-[13.5px] font-medium rounded-xl px-4 py-3 outline-none transition-all duration-200 border ${
-                    errors.email ? "border-rose-400 bg-rose-50/40" : "border-transparent focus:border-slate-300 focus:ring-2 focus:ring-black/5"
-                  }`}
-                />
-                {errors.email && (
-                  <p className="text-xs text-rose-500 mt-1">{errors.email.message}</p>
-                )}
-              </div>
-
-              {/* Password Field with "Forgot password?" */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label 
-                    htmlFor="login-password" 
-                    className="text-[13px] font-medium text-[#4b5563]"
-                  >
-                    Password
-                  </label>
-                  
-                </div>
-                <div className="relative flex items-center">
-                  <input
-                    {...register("password")}
-                    id="login-password"
-                    type={showPw ? "text" : "password"}
-                    placeholder="••••••••"
-                    className={`w-full bg-[#f0f0f2] hover:bg-[#eaebee] focus:bg-white text-[#18181b] placeholder-[#a1a1aa] text-[13.5px] font-medium rounded-xl px-4 py-3 pr-11 outline-none transition-all duration-200 border ${
-                      errors.password ? "border-rose-400 bg-rose-50/40" : "border-transparent focus:border-slate-300 focus:ring-2 focus:ring-black/5"
-                    }`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPw((v) => !v)}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 flex items-center justify-center text-neutral-400 hover:text-neutral-600 transition-colors cursor-pointer"
-                    tabIndex={-1}
-                    aria-label={showPw ? "Hide password" : "Show password"}
-                  >
-                    {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-                <button
-                    type="button"
-                    onClick={handleForgotPassword}
-                    className="text-[12.5px] text-[#3b82f6] hover:text-blue-700 hover:underline font-normal transition-colors cursor-pointer"
-                  >
-                    Forgot password?
-                  </button>
-                {errors.password && (
-                  <p className="text-xs text-rose-500 mt-1">{errors.password.message}</p>
-                )}
-              </div>
-
-              {/* Remember Me Checkbox */}
-              <div className="flex items-center gap-2.5 pt-1">
-                <input
-                  {...register("rememberMe")}
-                  id="remember-me"
-                  type="checkbox"
-                  className="w-4 h-4 rounded-[4px] border-neutral-300 text-black accent-black focus:ring-0 cursor-pointer"
-                />
-                <label 
-                  htmlFor="remember-me" 
-                  className="text-[13px] text-[#4b5563] cursor-pointer select-none"
-                >
-                  Remember me
-                </label>
-              </div>
-
-              {/* Submit Button */}
-              <button
-                type="submit"
-                id="login-submit-button"
-                disabled={isLoading}
-                className="w-full bg-[#18181b] hover:bg-black active:scale-[0.99] text-white font-medium text-sm py-3.5 rounded-xl transition-all duration-200 shadow-sm mt-3 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-75"
-              >
-                {isLoading ? (
-                  <span className="flex items-center gap-2">
-                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span>Signing in...</span>
-                  </span>
-                ) : (
-                  <span>Login</span>
-                )}
-              </button>
-
-              {/* Terms and Conditions Confirmation */}
-              <p className="text-[12px] text-[#64748b] pt-1 leading-relaxed">
-                By proceeding, you confirm that you've read, understood, and agree to our{" "}
-                <button
-                  type="button"
-                  onClick={handleTerms}
-                  className="text-blue-600 hover:underline font-medium cursor-pointer"
-                >
-                  Terms & Conditions
-                </button>.
-              </p>
-
-            </form>
-          </div>
-        </div>
-
-        {/* Right Column: Clean Visual Image Slideshow */}
-        <div className="w-full lg:w-1/2 relative min-h-[460px] sm:min-h-[520px] lg:min-h-[600px] overflow-hidden bg-gradient-to-br from-[#f8fbfe] via-white to-[#edf5fc] flex items-center justify-center p-6 sm:p-10 group select-none">
-          {/* Slide Visual Images with Crossfade and Full Visibility */}
-          {SLIDES.map((imgSrc, idx) => (
-            <div
-              key={imgSrc}
-              className={`absolute inset-0 flex items-center justify-center p-6 sm:p-10 transition-all duration-700 ease-in-out ${
-                idx === currentSlide
-                  ? "opacity-100 scale-100 z-10"
-                  : "opacity-0 scale-95 pointer-events-none z-0"
-              }`}
-            >
-              <img
-                src={imgSrc}
-                alt={`Slideshow illustration ${idx + 1}`}
-                className="max-w-full max-h-[440px] sm:max-h-[480px] lg:max-h-[520px] w-auto h-auto object-contain rounded-2xl drop-shadow-[0_16px_36px_rgba(56,104,176,0.14)] select-none"
-              />
-            </div>
-          ))}
-
-          {/* Left / Right Arrow Navigation Buttons */}
-          <button
-            type="button"
-            onClick={() => setCurrentSlide((prev) => (prev - 1 + SLIDES.length) % SLIDES.length)}
-            className="absolute left-4 z-20 w-9 h-9 rounded-full bg-white/90 hover:bg-white text-slate-700 hover:text-slate-900 border border-slate-200/80 shadow-md flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
-            title="Previous slide"
-          >
-            <ChevronLeft size={18} />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setCurrentSlide((prev) => (prev + 1) % SLIDES.length)}
-            className="absolute right-4 z-20 w-9 h-9 rounded-full bg-white/90 hover:bg-white text-slate-700 hover:text-slate-900 border border-slate-200/80 shadow-md flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
-            title="Next slide"
-          >
-            <ChevronRight size={18} />
-          </button>
-
-          {/* Minimal Navigation Progress Indicators / Dots */}
-          <div className="absolute bottom-6 z-20 flex items-center gap-2 bg-white/80 backdrop-blur-md px-3 py-1.5 rounded-full border border-slate-200/60 shadow-xs">
-            {SLIDES.map((imgSrc, idx) => (
-              <button
-                key={imgSrc}
-                type="button"
-                onClick={() => setCurrentSlide(idx)}
-                className={`h-2 rounded-full transition-all duration-300 cursor-pointer ${
-                  idx === currentSlide
-                    ? "w-7 bg-blue-600 shadow-xs"
-                    : "w-2 bg-slate-300 hover:bg-slate-400"
-                }`}
-                title={`Go to slide ${idx + 1}`}
-              />
-            ))}
-          </div>
-        </div>
-
-      </div>
-    </div>
-  );
+  return <AuthShell mode="login">
+    {successRoute && !challenge ? <AuthSuccess title="You're signed in" description="Opening your PayTeam account…" /> : <>
+      <AuthHeading title="Welcome back" description="Sign in to manage your payments, transfers and everyday services." />
+      <form className="pt-form" onSubmit={handleSubmit(onSubmit)} noValidate>
+        {!challenge && <ErrorAlert error={apiError} onDismiss={() => setApiError(null)} />}
+        <AuthField id="login-email" label="Email or mobile number" icon={Mail} registration={register("email")} error={errors.email?.message} autoComplete="username" placeholder="Enter your email or mobile" disabled={isLoading || Boolean(challenge)} />
+        <AuthField id="login-password" label="Password" icon={LockKeyhole} registration={register("password")} error={errors.password?.message} type="password" autoComplete="current-password" placeholder="Enter your password" disabled={isLoading || Boolean(challenge)} />
+        <div className="pt-row"><span><ShieldCheck size={14} style={{display:"inline",marginRight:5}} /> Secure sign-in</span><Link className="pt-link" to="/forgot-password">Forgot password?</Link></div>
+        <AuthButton id="login-submit-button" busy={isLoading} disabled={Boolean(challenge)}>{isLoading ? "Signing in…" : "Continue"}</AuthButton>
+      </form>
+      <p className="pt-switch">New to PayTeam? <Link to="/register" className="pt-link">Create an account</Link></p>
+    </>}
+    {challenge && <OtpDialog otp={otp} setOtp={setOtp} remaining={remaining} duration={challenge.duration} resendWait={resendWait} busy={isLoading} error={apiError} dismissError={() => setApiError(null)} onVerify={onVerifyOtp} onResend={onResendOtp} onBack={onBack} success={Boolean(successRoute)} />}
+  </AuthShell>;
 };
-
 export default LoginPage;

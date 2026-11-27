@@ -7,6 +7,7 @@ import "./setupEnv.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import pool from "../../config/db.js";
+import redisConnection from "../../config/redis.js";
 import authModel from "./auth.model.js";
 import authController from "./auth.controller.js";
 import authService from "./auth.service.js";
@@ -18,6 +19,9 @@ import { errorHandler } from "../../middlewares/error.middleware.js";
 import { createRateLimiter } from "../../middlewares/authRateLimit.middleware.js";
 import {
   normalizeIdentifier,
+  validateRegister,
+  validateLoginOtp,
+  validateResendLoginOtp,
   validateLogin,
   validateForgotPassword,
   validateResetPassword,
@@ -32,7 +36,7 @@ function activeUser(overrides = {}) {
     mobile: "+14155552671",
     password_hash:
       "$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy",
-    role_id: 2,
+    role_id: 1,
     company_id: null,
     parent_id: null,
     status: "active",
@@ -40,6 +44,50 @@ function activeUser(overrides = {}) {
     company_name: null,
     ...overrides,
   };
+}
+
+// Mock the Redis boundary, not login/verification or JWT issuance. The store's
+// Lua contract is tested separately in loginOtpStore.test.js.
+function mockLoginOtp(t) {
+  const env = { APP_ENV: "development", NODE_ENV: "test", REDIS_HOST: "127.0.0.1", REDIS_KEY_PREFIX: "payteam:unit-test" };
+  const previous = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]));
+  Object.assign(process.env, env);
+  t.after(() => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  const records = new Map();
+  let otp;
+  t.mock.method(console, "info", (message) => {
+    const match = /^\[PayTeam DEVELOPMENT LOGIN OTP\] (\d{6})$/.exec(message);
+    if (match) otp = match[1];
+  });
+  t.mock.method(redisConnection, "getRedisClient", async () => ({
+    async set(key, value, options) {
+      assert.equal(options.EX, 300);
+      records.set(key, JSON.parse(value));
+      return "OK";
+    },
+    async eval(_script, { keys, arguments: args }) {
+      const challenge = records.get(keys[0]);
+      if (!challenge || challenge.tokenHash !== args[0]) return [0];
+      if (args.length === 5) {
+        if (challenge.passwordBinding !== args[1]) return [0];
+        challenge.otpHash = args[2];
+        return [1, 240];
+      }
+      if (challenge.otpHash !== args[1]) {
+        challenge.attempts++;
+        if (challenge.attempts >= Number(args[2])) records.delete(keys[0]);
+        return [0];
+      }
+      records.delete(keys[0]);
+      return [1, challenge.passwordBinding];
+    },
+  }));
+  return { get otp() { assert.match(otp, /^\d{6}$/); return otp; } };
 }
 
 function validate(middleware, body) {
@@ -187,39 +235,72 @@ test("database config requires explicit connection values and rejects invalid po
   process.env.DB_PORT = previous;
 });
 
-test("login issues a signed JWT for active email and mobile accounts without exposing hashes", async () => {
-  const originalFind = authModel.findUserByIdentifier;
+test("both roles require OTP before a JWT is issued; admins retain mobile login", async (t) => {
+  const delivery = mockLoginOtp(t);
   const hash = await bcrypt.hash("correct-password", 4);
-  authModel.findUserByIdentifier = async (identifier, type) => {
-    assert.equal(type, identifier.includes("@") ? "email" : "mobile");
-    return activeUser({ password_hash: hash });
-  };
-  try {
-    for (const [identifier, type] of [
-      ["user@example.com", "email"],
-      ["+14155552671", "mobile"],
-    ]) {
-      const result = await authService.login({
-        identifier,
-        type,
-        password: "correct-password",
-      });
+  for (const [roleId, identifier, type] of [
+    [1, "user@example.com", "email"],
+    [1, "+14155552671", "mobile"],
+    [2, "user@example.com", "email"],
+  ]) {
+    const account = activeUser({ role_id: roleId, password_hash: hash });
+    const originalFind = authModel.findUserByIdentifier;
+    const originalAccount = authModel.findLoginAccountById;
+    const originalProfile = authModel.findActiveUserById;
+    authModel.findUserByIdentifier = async () => account;
+    authModel.findLoginAccountById = async () => account;
+    authModel.findActiveUserById = async () => account;
+    try {
+      const challenge = await authService.login({ identifier, type, password: "correct-password" });
+      assert.equal(challenge.otpRequired, true);
+      assert.equal(challenge.expiresIn, 300);
+      assert.equal(Object.hasOwn(challenge, "accessToken"), false);
+      assert.equal(Object.hasOwn(challenge, "otp"), false);
+      const wrongOtp = delivery.otp === "000000" ? "000001" : "000000";
+      await assert.rejects(authService.verifyLoginOtp({ loginToken: challenge.loginToken, otp: wrongOtp }), { code: "INVALID_LOGIN_OTP" });
+      const resent = await authService.resendLoginOtp({ loginToken: challenge.loginToken });
+      assert.equal(resent.otpRequired, true);
+      assert.equal(resent.expiresIn, 240);
+      const credentials = { loginToken: resent.loginToken, otp: delivery.otp };
+      const result = await authService.verifyLoginOtp(credentials);
       const payload = jwt.verify(result.accessToken, getAuthConfig().secret, {
-        algorithms: ["HS256"],
-        issuer: JWT_ISSUER,
-        audience: JWT_AUDIENCE,
+        algorithms: ["HS256"], issuer: JWT_ISSUER, audience: JWT_AUDIENCE,
       });
       assert.equal(payload.sub, "42");
-      assert.equal(result.user.name, "Example User");
+      assert.equal(result.user.role_id, roleId);
       assert.equal(JSON.stringify(result).includes(hash), false);
-      assert.equal(JSON.stringify(result).includes("correct-password"), false);
+      await assert.rejects(authService.verifyLoginOtp(credentials), { code: "INVALID_LOGIN_OTP" });
+    } finally {
+      authModel.findUserByIdentifier = originalFind;
+      authModel.findLoginAccountById = originalAccount;
+      authModel.findActiveUserById = originalProfile;
     }
-  } finally {
-    authModel.findUserByIdentifier = originalFind;
   }
 });
 
-test("login normalizes Indian mobile numbers across formats to canonical +91XXXXXXXXXX before lookup", async () => {
+test("admin OTP login fails closed without a delivery provider or Redis", async (t) => {
+  mockLoginOtp(t);
+  const account = activeUser({ password_hash: await bcrypt.hash("correct-password", 4) });
+  t.mock.method(authModel, "findUserByIdentifier", async () => account);
+  const credentials = { identifier: "user@example.com", type: "email", password: "correct-password" };
+  process.env.APP_ENV = "production";
+  await assert.rejects(authService.login(credentials), { statusCode: 503 });
+  process.env.APP_ENV = "development";
+  t.mock.method(redisConnection, "getRedisClient", async () => { throw new Error("Redis unavailable"); });
+  await assert.rejects(authService.login(credentials), { statusCode: 503 });
+});
+
+test("admin OTP cannot authenticate a blocked account", async (t) => {
+  const delivery = mockLoginOtp(t);
+  const account = activeUser({ password_hash: await bcrypt.hash("correct-password", 4) });
+  t.mock.method(authModel, "findUserByIdentifier", async () => account);
+  t.mock.method(authModel, "findLoginAccountById", async () => ({ ...account, status: "blocked" }));
+  const challenge = await authService.login({ identifier: "user@example.com", type: "email", password: "correct-password" });
+  await assert.rejects(authService.verifyLoginOtp({ loginToken: challenge.loginToken, otp: delivery.otp }), { code: "INVALID_LOGIN_OTP" });
+});
+
+test("login normalizes Indian mobile numbers across formats to canonical +91XXXXXXXXXX before lookup", async (t) => {
+  mockLoginOtp(t);
   const originalFind = authModel.findUserByIdentifier;
   const hash = await bcrypt.hash("correct-password", 4);
   const lookups = [];
@@ -242,7 +323,8 @@ test("login normalizes Indian mobile numbers across formats to canonical +91XXXX
         type: "mobile",
         password: "correct-password",
       });
-      assert.ok(result.accessToken);
+      assert.equal(result.otpRequired, true);
+      assert.equal(Object.hasOwn(result, "accessToken"), false);
     }
 
     assert.equal(lookups.length, 4);
@@ -257,7 +339,8 @@ test("login normalizes Indian mobile numbers across formats to canonical +91XXXX
   }
 });
 
-test("login preserves email identifiers without normalization changes", async () => {
+test("login preserves email identifiers without normalization changes", async (t) => {
+  mockLoginOtp(t);
   const originalFind = authModel.findUserByIdentifier;
   const hash = await bcrypt.hash("correct-password", 4);
   let queriedIdentifier = null;
@@ -437,16 +520,18 @@ test("JWT middleware enforces signature, expiry, and active account status", asy
   }
 });
 
-test("health and auth endpoints respond with the documented authorization and safe-profile behavior", async () => {
+test("health and auth endpoints respond with the documented authorization and safe-profile behavior", async (t) => {
+  const delivery = mockLoginOtp(t);
   const originalActive = authModel.isUserActive;
   const originalFind = authModel.findActiveUserById;
   const originalFindByIdentifier = authModel.findUserByIdentifier;
   const originalIsAdmin = authModel.isAdmin;
   const originalExecute = pool.execute;
+  const account = activeUser({ password_hash: await bcrypt.hash("correct-password", 4) });
+  t.mock.method(authModel, "findLoginAccountById", async () => account);
   authModel.isUserActive = async () => true;
   authModel.findActiveUserById = async () => activeUser();
-  authModel.findUserByIdentifier = async () =>
-    activeUser({ password_hash: await bcrypt.hash("correct-password", 4) });
+  authModel.findUserByIdentifier = async () => account;
   pool.execute = async (sql) =>
     sql.includes("SELECT request_count")
       ? [[{ request_count: 1 }]]
@@ -490,15 +575,25 @@ test("health and auth endpoints respond with the documented authorization and sa
     assert.equal(login.status, 200);
     const loginBody = await login.json();
     assert.equal(JSON.stringify(loginBody).includes("password_hash"), false);
+    assert.equal(loginBody.data.otpRequired, true);
+    assert.equal(Object.hasOwn(loginBody.data, "accessToken"), false);
+    const verified = await fetch(`${base}/api/auth/login/verify-otp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ loginToken: loginBody.data.loginToken, otp: delivery.otp }),
+    });
+    assert.equal(verified.status, 200);
+    const verifiedBody = await verified.json();
+    assert.ok(verifiedBody.data.accessToken);
     const response = await fetch(`${base}/api/auth/me`, {
-      headers: { authorization: `Bearer ${loginBody.data.accessToken}` },
+      headers: { authorization: `Bearer ${verifiedBody.data.accessToken}` },
     });
     const body = await response.json();
     assert.equal(response.status, 200);
     assert.equal(body.data.name, "Example User");
     assert.equal(JSON.stringify(body).includes("password_hash"), false);
     const healthPath = `${base}/api/admin/platform-health`;
-    const headers = { authorization: `Bearer ${loginBody.data.accessToken}` };
+    const headers = { authorization: `Bearer ${verifiedBody.data.accessToken}` };
     assert.equal((await fetch(healthPath)).status, 401);
     authModel.isAdmin = async () => false;
     assert.equal((await fetch(healthPath, { headers })).status, 403);
@@ -866,7 +961,8 @@ test("forgot-password controller exposes the reset token only in development", a
   }
 });
 
-test("reset validates before hashing and only one concurrent request consumes a token", async () => {
+test("reset validates before hashing and only one concurrent request consumes a token", async (t) => {
+  mockLoginOtp(t);
   const originalCheck = authModel.checkPasswordResetCredentials;
   const originalConsume = authModel.consumePasswordReset;
   const originalFindUser = authModel.findUserByIdentifier;
@@ -928,7 +1024,8 @@ test("reset validates before hashing and only one concurrent request consumes a 
       type: "email",
       password: "new-password",
     });
-    assert.equal(loginResult.user.id, "42");
+    assert.equal(loginResult.otpRequired, true);
+    assert.equal(Object.hasOwn(loginResult, "accessToken"), false);
     await assert.rejects(
       authService.login({
         identifier: "user@example.com",
@@ -1277,4 +1374,37 @@ test("mounted self-service password endpoint rejects unauthenticated requests", 
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+const registration = { name: "Test Customer", email: " Customer@Example.com ", mobile: "9876543210", password: "TestPassword@123" };
+
+test("registration normalizes email and mobile and accepts only the four public fields", () => {
+  const result = validate(validateRegister, registration);
+  assert.equal(result.error, undefined);
+  assert.deepEqual(result.req.validatedBody, { ...registration, email: "customer@example.com", mobile: "+919876543210" });
+  for (const extra of [{ role_id: 1 }, { schemeId: 2 }, { parentId: 1 }, { confirmPassword: registration.password }, { email_verified_at: "2026-01-01" }]) {
+    assert.equal(validate(validateRegister, { ...registration, ...extra }).error.code, "VALIDATION_ERROR");
+  }
+});
+
+test("registration rejects malformed contact data and invalid passwords", () => {
+  for (const fields of [{ name: " " }, { email: "9876543210" }, { mobile: "12345" }, { mobile: 9876543210 }, { password: "short" }, { password: "₹".repeat(25) }]) {
+    assert.equal(validate(validateRegister, { ...registration, ...fields }).error.code, "VALIDATION_ERROR");
+  }
+});
+
+test("login preserves legacy identifier and accepts an email alias without ambiguous inputs", () => {
+  assert.equal(validate(validateLogin, { identifier: "9876543210", password: "test" }).req.validatedBody.type, "mobile");
+  assert.deepEqual(validate(validateLogin, { email: " Customer@Example.com ", password: "test" }).req.validatedBody, { identifier: "customer@example.com", type: "email", password: "test" });
+  assert.equal(validate(validateLogin, { identifier: "admin@example.com", email: "other@example.com", password: "test" }).error.code, "VALIDATION_ERROR");
+  assert.equal(validate(validateLogin, { email: "9876543210", password: "test" }).error.code, "VALIDATION_ERROR");
+});
+
+test("OTP validators enforce opaque token format and six digit strings", () => {
+  const token = `42.${"a".repeat(43)}`;
+  assert.deepEqual(validate(validateLoginOtp, { loginToken: token, otp: "000001" }).req.validatedBody, { loginToken: token, otp: "000001" });
+  assert.ok(validate(validateLoginOtp, { loginToken: token, otp: 123456 }).error);
+  assert.ok(validate(validateLoginOtp, { loginToken: "bad", otp: "123456" }).error);
+  assert.ok(validate(validateResendLoginOtp, { loginToken: token, userId: 1 }).error);
+  assert.equal(validate(validateResendLoginOtp, { loginToken: token }).error, undefined);
 });

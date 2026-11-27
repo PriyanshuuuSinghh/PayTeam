@@ -23,13 +23,18 @@ function createRateLimiter({ incrementCounter = authModel.incrementRateLimitCoun
 
       if (scope === "changePassword" && req.user?.id) {
         buckets.push({ kind: "user", value: req.user.id, maximum: policy.identifier });
+      } else if (scope === "loginOtp" || scope === "loginOtpResend") {
+        const token = req.body?.loginToken;
+        if (typeof token === "string" && /^[1-9]\d{0,19}\.[A-Za-z0-9_-]{43}$/.test(token)) {
+          buckets.push({ kind: "token", value: token, maximum: policy.identifier });
+        }
       } else if (scope === "resetPassword") {
         const token = req.body?.token;
         if (typeof token === "string" && /^[A-Za-z0-9_-]{43}$/.test(token)) {
           buckets.push({ kind: "token", value: token, maximum: policy.identifier });
         }
       } else {
-        const normalized = normalizeIdentifier(req.body?.identifier);
+        const normalized = normalizeIdentifier(req.body?.identifier ?? req.body?.email);
         if (normalized) buckets.push({ kind: "identifier", value: normalized.identifier, maximum: policy.identifier });
       }
 

@@ -799,11 +799,24 @@ test("provider timeout is sanitized", async () => {
   });
 });
 
+
 test("PayTeam baseline persists DigiLocker session ownership, expiry, state and encrypted reference fields", () => {
-  const migration = readFileSync(new URL("../../../../../../database/migrations/001_initial_schema.sql", import.meta.url), "utf8");
-  const sessionTable = migration.match(/CREATE TABLE kyc_digilocker_sessions \([\s\S]*?\n\) ENGINE=InnoDB/)?.[0];
+  const migration = readFileSync(
+    new URL(
+      "../../../../../../database/migrations/001_initial_schema.sql",
+      import.meta.url
+    ),
+    "utf8"
+  );
+
+  const sessionTable = migration.match(
+    /CREATE TABLE kyc_digilocker_sessions \([\s\S]*?\n\) ENGINE=InnoDB/
+  )?.[0];
+
   assert.ok(sessionTable, "missing DigiLocker session table");
+
   for (const token of [
+    "CREATE TABLE kyc_digilocker_sessions",
     "user_id BIGINT UNSIGNED NOT NULL",
     "case_id BIGINT UNSIGNED NOT NULL",
     "verification_id BIGINT UNSIGNED NOT NULL",
@@ -816,10 +829,31 @@ test("PayTeam baseline persists DigiLocker session ownership, expiry, state and 
     "reference_key_authentication_tag BINARY(16)",
     "FOREIGN KEY (user_id) REFERENCES users(id)",
     "FOREIGN KEY (case_id) REFERENCES kyc_cases(id)",
-  ]) assert.ok(sessionTable.includes(token), `missing schema contract ${token}`);
-  assert.equal(/ALTER\s+TABLE\s+(users|kyc_cases|kyc_steps|kyc_verifications)/i.test(migration), false);
-  assert.equal(/FOREIGN KEY \(verification_id\) REFERENCES kyc_verifications\(id\)\s+ON DELETE CASCADE/i.test(sessionTable), false);
-  assert.match(sessionTable, /verification_id is the base column of active_verification_id/i);
+    "FOREIGN KEY (verification_id) REFERENCES kyc_verifications(id)",
+    "UNIQUE KEY uq_kyc_digilocker_state_hash (authorization_state_hash)",
+    "UNIQUE KEY uq_kyc_digilocker_active_verification (active_verification_id)",
+    "CONSTRAINT chk_kyc_digilocker_reference_key_parts",
+  ]) {
+    assert.ok(
+      sessionTable.includes(token),
+      `missing schema contract ${token}`
+    );
+  }
+
+  assert.equal(
+    /ALTER\s+TABLE\s+(users|kyc_cases|kyc_steps|kyc_verifications)/i.test(migration),
+    false
+  );
+
+  assert.equal(
+    /FOREIGN KEY \(verification_id\) REFERENCES kyc_verifications\(id\)\s+ON DELETE CASCADE/i.test(sessionTable),
+    false
+  );
+
+  assert.match(
+    sessionTable,
+    /verification_id is the base column of active_verification_id/i
+  );
 });
 
 test("Aadhaar shared callback gets reference, user details, then fetches raw XML before persistence", async () => {

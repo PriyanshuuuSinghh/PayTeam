@@ -6,6 +6,9 @@ import recoveryDelivery from "./recoveryDelivery.js";
 import ApiError from "../../utils/ApiError.js";
 import { getAuthConfig, JWT_ISSUER, JWT_AUDIENCE } from "../../config/auth.js";
 import { normalizeMobile } from "../../utils/validationHelper.js";
+import redisConnection from "../../config/redis.js";
+import { getRedisConfig } from "../../config/env.js";
+import { createLoginOtpStore } from "./loginOtpStore.js";
 
 const AUTH_CONFIG = getAuthConfig();
 
@@ -75,8 +78,36 @@ function safeUser(user) {
   };
 }
 
-async function login({ identifier, type, password }) {
+async function register({ name, email, mobile, password }) {
   const config = getAuthConfig();
+  const passwordHash = await bcrypt.hash(password, config.bcryptSaltRounds);
+  try {
+    return await authModel.registerCustomer({ name, email, mobile, passwordHash });
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(503, "Registration is temporarily unavailable", "SERVICE_UNAVAILABLE");
+  }
+}
+
+function developmentLoginOtpStore() {
+  // Fail closed. Until a delivery provider is integrated, login OTP for both roles is dev-only.
+  if (process.env.APP_ENV !== "development" || process.env.NODE_ENV === "production") {
+    throw new ApiError(503, "Login OTP delivery is unavailable", "SERVICE_UNAVAILABLE");
+  }
+  return createLoginOtpStore({ getClient: redisConnection.getRedisClient, keyPrefix: getRedisConfig().keyPrefix, secret: getAuthConfig().secret });
+}
+
+function invalidLoginOtp() {
+  return new ApiError(401, "Invalid or expired login OTP. Sign in again if necessary.", "INVALID_LOGIN_OTP");
+}
+
+function challengeResponse(challenge) {
+  // Deliberately omit phone, email, login token and password from logs.
+  console.info(`[PayTeam DEVELOPMENT LOGIN OTP] ${challenge.otp}`);
+  return { otpRequired: true, loginToken: challenge.loginToken, expiresIn: challenge.expiresIn };
+}
+
+async function login({ identifier, type, password }) {
 
   const lookupIdentifier =
     type === "mobile" ? normalizeMobile(identifier) : identifier;
@@ -96,10 +127,42 @@ async function login({ identifier, type, password }) {
     passwordMatches = false;
   }
 
-  if (!user || user.status !== "active" || !passwordMatches) {
+  if (!user || user.status !== "active" || !user.password_hash || !passwordMatches) {
     throw authFailure();
   }
 
+  const roleId = Number(user.role_id);
+  // Preserve legacy admin email/mobile login; customers must use email.
+  if (![1, 2].includes(roleId) || (roleId === 2 && type !== "email")) throw authFailure();
+  const store = developmentLoginOtpStore();
+  return challengeResponse(await withDatabase(() => store.issue(user)));
+}
+
+async function verifyLoginOtp({ loginToken, otp }) {
+  const store = developmentLoginOtpStore();
+  const verified = await withDatabase(() => store.verify(loginToken, otp));
+  if (!verified) throw invalidLoginOtp();
+  const account = await withDatabase(() => authModel.findLoginAccountById(verified.userId));
+  if (!account || ![1, 2].includes(Number(account.role_id)) || account.status !== "active" || !store.matchesPassword(account, verified.passwordBinding)) throw invalidLoginOtp();
+  const user = await withDatabase(() => authModel.findActiveUserById(verified.userId));
+  if (!user || Number(user.role_id) !== Number(account.role_id) || user.status !== "active") throw invalidLoginOtp();
+  return issueAccessToken(user);
+}
+
+async function resendLoginOtp({ loginToken }) {
+  const store = developmentLoginOtpStore();
+  const parsed = store.parseToken(loginToken);
+  if (!parsed) throw invalidLoginOtp();
+  const user = await withDatabase(() => authModel.findLoginAccountById(parsed.userId));
+  if (!user || ![1, 2].includes(Number(user.role_id)) || user.status !== "active") throw invalidLoginOtp();
+  const challenge = await withDatabase(() => store.resend(loginToken, user));
+  if (!challenge) throw invalidLoginOtp();
+  if (challenge.rateLimited) throw new ApiError(429, "Please wait before resending, or sign in again", "RATE_LIMITED");
+  return challengeResponse(challenge);
+}
+
+function issueAccessToken(user) {
+  const config = getAuthConfig();
   const accessToken = jwt.sign({}, config.secret, {
     algorithm: "HS256",
     audience: JWT_AUDIENCE,
@@ -151,6 +214,11 @@ async function forgotPassword({ identifier, type }) {
           }
         : {}),
     };
+  }
+
+  if (Number(user.role_id) === 2 && !localDevelopment &&
+      !(type === "email" ? user.email_verified_at : user.mobile_verified_at)) {
+    return { message: RECOVERY_MESSAGE };
   }
 
   const config = getAuthConfig();
@@ -301,13 +369,16 @@ async function changePassword(userId, { currentPassword, newPassword }) {
 }
 
 const authService = {
+  register,
   login,
+  verifyLoginOtp,
+  resendLoginOtp,
   getCurrentUser,
   forgotPassword,
   resetPassword,
   changePassword,
 };
 
-export { login, getCurrentUser, forgotPassword, resetPassword, changePassword };
+export { register, login, verifyLoginOtp, resendLoginOtp, getCurrentUser, forgotPassword, resetPassword, changePassword };
 
 export default authService;

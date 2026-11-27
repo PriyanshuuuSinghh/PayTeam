@@ -3,6 +3,9 @@ import * as controller from "./auth.controller.js";
 import { requireAuth } from "../../middlewares/auth.middleware.js";
 import { rateLimit } from "../../middlewares/authRateLimit.middleware.js";
 import {
+  validateRegister,
+  validateLoginOtp,
+  validateResendLoginOtp,
   validateLogin,
   validateForgotPassword,
   validateResetPassword,
@@ -11,7 +14,10 @@ import {
 
 const router = Router();
 
+router.post("/register", rateLimit("register"), validateRegister, controller.register);
 router.post("/login", rateLimit("login"), validateLogin, controller.login);
+router.post("/login/verify-otp", rateLimit("loginOtp"), validateLoginOtp, controller.verifyLoginOtp);
+router.post("/login/resend-otp", rateLimit("loginOtpResend"), validateResendLoginOtp, controller.resendLoginOtp);
 router.post(
   "/forgot-password",
   rateLimit("forgotPassword"),

@@ -31,6 +31,9 @@ function getAuthConfig() {
     passwordMinLength: passwordConfig.passwordMinLength,
     resetTokenTtlMinutes: positiveInteger(process.env, "AUTH_RESET_TOKEN_TTL_MINUTES", 15, 5, 60),
     rateLimits: {
+      register: { windowSeconds: 900, ip: 20, identifier: 5 },
+      loginOtp: { windowSeconds: 300, ip: 60, identifier: 10 },
+      loginOtpResend: { windowSeconds: 300, ip: 30, identifier: 5 },
       login: {
         windowSeconds: positiveInteger(process.env, "AUTH_LOGIN_WINDOW_SECONDS", 900, 60, 86400),
         ip: positiveInteger(process.env, "AUTH_LOGIN_IP_LIMIT", 60, 1),
