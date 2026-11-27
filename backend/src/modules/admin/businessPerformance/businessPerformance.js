@@ -36,33 +36,23 @@ export function getBusinessWindow({ period = "24h", startDate, endDate } = {}, n
 
 export async function getBusinessPerformance(query) {
   const { start, end, previousStart } = getBusinessWindow(query);
-  const [
-    [[signups]],
-    [[wallets]],
-  ] = await Promise.all([
-    pool.execute(
-      `SELECT COUNT(CASE WHEN UNIX_TIMESTAMP(u.created_at) >= ? THEN 1 END) AS current_count,
-              COUNT(CASE WHEN UNIX_TIMESTAMP(u.created_at) < ? THEN 1 END) AS previous_count
-         FROM users u
-         JOIN roles r ON r.id = u.role_id
-        WHERE r.slug = 'US' AND UNIX_TIMESTAMP(u.created_at) >= ? AND UNIX_TIMESTAMP(u.created_at) < ?`,
-      [start, start, previousStart, end],
-    ),
-    pool.execute(
-      `SELECT CAST(COALESCE(SUM(w.mainbalance + w.pgbalance + w.qrbalance + w.settlementwallet), 0.00) AS CHAR) AS amount,
+  const [[row]] = await pool.execute(
+      `SELECT COUNT(CASE WHEN UNIX_TIMESTAMP(u.created_at) >= ? AND UNIX_TIMESTAMP(u.created_at) < ? THEN 1 END) AS current_count,
+              COUNT(CASE WHEN UNIX_TIMESTAMP(u.created_at) >= ? AND UNIX_TIMESTAMP(u.created_at) < ? THEN 1 END) AS previous_count,
+              CAST(COALESCE(SUM(w.mainbalance + w.pgbalance + w.qrbalance + w.settlementwallet), 0.00) AS CHAR) AS amount,
               COUNT(*) - COUNT(w.user_id) AS missing_wallets
          FROM users u
          JOIN roles r ON r.id = u.role_id
          LEFT JOIN user_wallets w ON w.user_id = u.id
         WHERE r.slug = 'US'`,
-    ),
-  ]);
+      [start, end, previousStart, start],
+  );
 
-  const current = Number(signups.current_count);
-  const previous = Number(signups.previous_count);
+  const current = Number(row.current_count);
+  const previous = Number(row.previous_count);
   return {
     window: { start, end },
     signups: { current, previous, changePercent: previous === 0 ? null : (current - previous) / previous * 100 },
-    walletBalance: { amount: Number(wallets.missing_wallets) === 0 ? wallets.amount : null, currency: "INR" },
+    walletBalance: { amount: Number(row.missing_wallets) === 0 ? row.amount : null, currency: "INR" },
   };
 }

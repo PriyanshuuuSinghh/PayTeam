@@ -11,8 +11,8 @@ export async function getKycQueueSummary(signal) {
   return summary;
 }
 
-export async function listAdminKycApplications(params = {}) {
-  const { data } = await api.get(root, { params });
+export async function listAdminKycApplications(params = {}, signal) {
+  const { data } = await api.get(root, { params, signal });
   return data.data;
 }
 

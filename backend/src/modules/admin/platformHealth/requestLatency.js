@@ -12,7 +12,7 @@ function p95(values) {
 }
 
 export function createRequestLatencyTracker() {
-  // Keep only timing data. The ring bounds memory even during a traffic spike.
+  // Keep aggregate inputs only. The ring bounds memory even during a traffic spike.
   const samples = [];
   let nextIndex = 0;
 
@@ -21,21 +21,25 @@ export function createRequestLatencyTracker() {
     nextIndex = (nextIndex + 1) % maxSamples;
   }
 
-  function snapshot(now = Date.now()) {
+  function snapshot(now = Date.now(), includeLatency = true) {
     const cutoff = now - windowMinutes * minuteMs;
     const minuteBoundary = Math.floor(now / minuteMs) * minuteMs;
     const durations = [];
     const buckets = new Map();
     let errorCount = 0;
+    let sampleCount = 0;
     for (const { durationMs, at, failed } of samples) {
       if (at < cutoff || at > now) continue;
-      durations.push(durationMs);
+      sampleCount += 1;
       if (failed) errorCount += 1;
+      if (!includeLatency) continue;
+      durations.push(durationMs);
       const minute = Math.floor(at / minuteMs) * minuteMs;
       if (minute < cutoff || minute >= minuteBoundary) continue;
       if (!buckets.has(minute)) buckets.set(minute, []);
       buckets.get(minute).push(durationMs);
     }
+    if (!includeLatency) return { errorCount, sampleCount, windowMinutes };
 
     // Skip the oldest minute if the ring may have discarded some of its samples.
     const oldest = samples.length === maxSamples ? samples[nextIndex].at : -Infinity;
@@ -44,7 +48,7 @@ export function createRequestLatencyTracker() {
       history.push(at > oldest ? p95(buckets.get(at) ?? []) : null);
     }
 
-    return { p95Ms: p95(durations), sampleCount: durations.length, errorCount, windowMinutes, history };
+    return { p95Ms: p95(durations), sampleCount, errorCount, windowMinutes, history };
   }
 
   return { record, snapshot };
@@ -58,12 +62,11 @@ export function recordIdtoRequest(failed) {
 }
 
 export function getIdtoErrors() {
-  const { errorCount, sampleCount, windowMinutes } = idtoRequests.snapshot();
-  return { errorCount, sampleCount, windowMinutes };
+  return idtoRequests.snapshot(Date.now(), false);
 }
 
 export function measureApiLatency(req, res, next) {
-  // Exclude probes and telemetry polling so opening the dashboard cannot create samples.
+  // Exclude probes and the telemetry endpoint from the measured request population.
   const path = req.path.toLowerCase().replace(/\/+$/, "");
   if (req.method !== "OPTIONS" && path.startsWith("/api/") &&
       path !== "/api/health" && path !== platformHealthPath) {

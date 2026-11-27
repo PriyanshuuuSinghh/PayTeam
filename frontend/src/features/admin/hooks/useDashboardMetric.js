@@ -1,47 +1,34 @@
 import { useEffect, useRef, useState } from "react";
+import { createMetricPoller } from "./metricPolling";
 
 export function useDashboardMetric(load, intervalMs, { params, refreshVersion, onComplete, invalidateOn } = {}) {
   const [result, setResult] = useState(null);
   const refreshRef = useRef(null);
   const seenVersion = useRef(refreshVersion);
+  const requestVersion = useRef(refreshVersion);
 
   useEffect(() => {
-    let controller;
-    let disposed = false;
-    let pending = false;
-    let lastSuccess = 0;
-
-    async function refresh(force = false) {
-      if (disposed) return;
-      if (lastSuccess && Date.now() - lastSuccess >= intervalMs * 2) {
-        setResult((previous) => previous?.params === params ? { ...previous, stale: true } : previous);
-      }
-      if (document.hidden || controller) {
-        if (force) pending = true;
-        return;
-      }
-      pending = false;
-      const version = seenVersion.current;
-      controller = new AbortController();
-      try {
-        const data = await load(controller.signal, params);
-        if (disposed) return;
-        const at = new Date();
-        lastSuccess = at.getTime();
+    const { refresh, dispose } = createMetricPoller({
+      intervalMs,
+      isHidden: () => document.hidden,
+      load: (signal) => {
+        requestVersion.current = seenVersion.current;
+        return load(signal, params);
+      },
+      onStale: () => setResult((previous) =>
+        previous?.params === params && !previous?.stale ? { ...previous, stale: true } : previous),
+      onSuccess: (data, at) => {
         setResult({ params, data, at, failed: false, stale: false });
-        onComplete?.(at, version);
-      } catch {
-        if (disposed) return;
+        onComplete?.(at, requestVersion.current);
+      },
+      onError: () => {
         setResult((previous) => {
           const last = previous?.params === params ? previous : null;
           return { ...last, params, failed: true, stale: Boolean(last?.at) };
         });
-        onComplete?.(undefined, version);
-      } finally {
-        controller = undefined;
-        if (pending && !document.hidden && !disposed) refresh();
-      }
-    }
+        onComplete?.(undefined, requestVersion.current);
+      },
+    });
 
     const onVisible = () => { if (!document.hidden) refresh(); };
     const invalidate = () => refresh(true);
@@ -51,8 +38,7 @@ export function useDashboardMetric(load, intervalMs, { params, refreshVersion, o
     if (invalidateOn) window.addEventListener(invalidateOn, invalidate);
     refresh();
     return () => {
-      disposed = true;
-      controller?.abort();
+      dispose();
       refreshRef.current = null;
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);

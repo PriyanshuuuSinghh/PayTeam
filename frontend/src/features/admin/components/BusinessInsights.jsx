@@ -82,7 +82,7 @@ function KycFunnel({ funnel, status, window }) {
   );
 }
 
-function Insight({ icon: Icon, color, title, value, detail, to }) {
+function Insight({ icon: Icon, color, title, value, detail, to, freshness }) {
   return (
     <div className="flex items-start gap-2.5">
       <span className={`grid size-8 shrink-0 place-items-center rounded-xl ${color}`}>
@@ -92,13 +92,16 @@ function Insight({ icon: Icon, color, title, value, detail, to }) {
         <dt className="text-sm font-medium text-slate-800">{to ? <Link to={to} className="text-blue-800 hover:underline">{title}</Link> : title}</dt>
         <dd className="font-semibold tabular-nums text-slate-950">{value}</dd>
         <dd className="text-xs leading-5 text-slate-600">{detail}</dd>
+        {freshness?.at && <dd><MetricFreshness {...freshness} /></dd>}
       </div>
     </div>
   );
 }
 
 export function BusinessInsights({ filter, refreshVersion }) {
-  const current = useDashboardMetric(loadInsights, 60_000, { params: filter, refreshVersion });
+  const current = useDashboardMetric(loadInsights, 60_000, {
+    params: filter, refreshVersion, invalidateOn: "payteam:kyc-reviewed",
+  });
   const status = current?.failed ? "Could not load" : "Loading…";
   const data = current?.data;
 
@@ -131,9 +134,9 @@ export function BusinessInsights({ filter, refreshVersion }) {
               <Insight icon={ChartNoAxesCombined} color="bg-emerald-50 text-emerald-700" title="Revenue growth" value="Unavailable" detail="Requires comparable earnings periods." />
               <Insight icon={Users} color="bg-violet-50 text-violet-700" title="Active customers"
                 to={data ? "/admin/users?customers=active" : undefined}
+                freshness={current}
                 value={data ? number.format(data.activeCustomers) : status}
                 detail={data ? `Of ${number.format(data.totalCustomers)} registered customers${data.totalCustomers ? ` (${percent.format(data.activeCustomers / data.totalCustomers)})` : ""} · current snapshot.` : "Enabled customer accounts · current snapshot."} />
-              <MetricFreshness {...current} />
               <Insight icon={Gift} color="bg-orange-50 text-orange-700" title="Scheme participation" value="Unavailable" detail="Requires a scheme enrolment or usage record." />
             </dl>
           </InsightCard>

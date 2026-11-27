@@ -285,6 +285,9 @@ test("get-user service: admin gets all users, non-admin gets only created users"
     await getUserService.getUsers(1, { search: " User ", limit: "11" });
     assert.equal(allUserOptions.limit, 11);
     assert.equal(allUserOptions.search, "User");
+    await getUserService.getUsers(1, { customers: "signups", from: "10", to: "20" });
+    assert.deepEqual(allUserOptions.metricWindow, { start: 10, end: 20 });
+    await assert.rejects(getUserService.getUsers(5, { customers: "active" }), { statusCode: 403 });
     await assert.rejects(getUserService.getUsers(1, { search: "User", limit: "51" }), { statusCode: 400 });
     await assert.rejects(getUserService.getUsers(5, { search: "User", limit: "11" }), { statusCode: 400 });
 

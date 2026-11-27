@@ -9,6 +9,25 @@ import {
   rejectKycCase,
 } from "./adminKyc.model.js";
 
+test("KYC cohort list and count share the customer, date and completed-step filters", async (t) => {
+  const calls = [];
+  t.mock.method(pool, "execute", async (sql, params) => {
+    calls.push(params);
+    assert.match(sql, /UNIX_TIMESTAMP\(kc\.created_at\) >= \? AND UNIX_TIMESTAMP\(kc\.created_at\) < \?/);
+    assert.match(sql, /cr\.slug = 'US'/);
+    assert.match(sql, /ks\.status = 'completed' AND ks\.step_number <= \?\) = \?/);
+    return sql.includes("AS total") ? [[{ total: 0 }]] : [[]];
+  });
+  const statuses = ["pending", "submitted"];
+  const filters = { window: { start: 10, end: 20 }, step: 3 };
+  await findKycApplications({ statuses, limit: 10, offset: 0, filters });
+  await countKycApplications(statuses, filters);
+  assert.deepEqual(calls, [
+    ["pending", "submitted", 10, 20, 3, 3, 10, 0],
+    ["pending", "submitted", 10, 20, 3, 3],
+  ]);
+});
+
   test("adminKyc.model: fetches applications with status and pagination filters", async () => {
     const originalExecute = pool.execute;
 

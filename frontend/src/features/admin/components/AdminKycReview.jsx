@@ -116,10 +116,14 @@ export default function AdminKycReview() {
   const [decision, setDecision] = useState(null);
   const [busy, setBusy] = useState(false);
   const listRequestRef = useRef(0);
+  const listAbortRef = useRef(null);
   const detailRequestRef = useRef(0);
 
   const loadList = useCallback(async () => {
     const requestId = ++listRequestRef.current;
+    listAbortRef.current?.abort();
+    const controller = new AbortController();
+    listAbortRef.current = controller;
     setLoading(true);
     setListError("");
     try {
@@ -127,7 +131,7 @@ export default function AdminKycReview() {
         ...(status ? { status } : {}),
         ...(isCohort ? { from, to, ...(step ? { step } : {}) } : {}),
         page, limit: 10,
-      });
+      }, controller.signal);
       if (requestId !== listRequestRef.current) return;
       setApplications(Array.isArray(result?.applications) ? result.applications : []);
       setPagination(result?.pagination || {});
@@ -142,7 +146,10 @@ export default function AdminKycReview() {
 
   useEffect(() => {
     loadList();
-    return () => { listRequestRef.current += 1; };
+    return () => {
+      listRequestRef.current += 1;
+      listAbortRef.current?.abort();
+    };
   }, [loadList]);
 
   const closeCase = () => {
@@ -226,7 +233,8 @@ export default function AdminKycReview() {
     return !query || [item.case_id, item.user_id, item.name, item.email, item.mobile]
       .some((value) => String(value ?? "").toLowerCase().includes(query));
   });
-  const selectedFilter = !status && isCohort ? "All cohort cases" : FILTERS.find((item) => item.value === status)?.label || "Awaiting review";
+  const selectedFilter = step ? `Completed through step ${step}`
+    : !status && isCohort ? "All cohort cases" : FILTERS.find((item) => item.value === status)?.label || "Awaiting review";
   const application = details?.application;
   const actionable = ["submitted", "under_review"].includes(application?.kyc_status);
 

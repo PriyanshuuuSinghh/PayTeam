@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, matchPath, useLocation, useSearchParams } from 'react-router-dom';
 import { useAdminDashboard } from '../../features/admin/hooks/useAdminDashboard';
 import { AdminSidebar } from '../../features/admin/components/AdminSidebar';
@@ -14,6 +14,9 @@ import AdminKycReview from '../../features/admin/components/AdminKycReview';
 export default function AdminDashboardPage() {
   const [businessRefreshVersion, setBusinessRefreshVersion] = useState(0);
   const [businessRefreshResult, setBusinessRefreshResult] = useState(null);
+  const recordBusinessRefresh = useCallback(({ version, at }) => {
+    setBusinessRefreshResult((previous) => ({ version, at: at ?? previous?.at }));
+  }, []);
   const {
     // Navigation
     sidebarCollapsed,
@@ -149,7 +152,7 @@ export default function AdminDashboardPage() {
           ) : isDashboard ? (
             <DashboardOverview
               refreshVersion={businessRefreshVersion}
-              onBusinessRefreshComplete={setBusinessRefreshResult}
+              onBusinessRefreshComplete={recordBusinessRefresh}
             />
           ) : unavailableTitle ? (
             <p className="rounded-xl border border-slate-200 bg-white p-5 text-sm">This admin workspace is unavailable.</p>

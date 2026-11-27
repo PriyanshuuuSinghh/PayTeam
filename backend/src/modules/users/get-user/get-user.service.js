@@ -3,6 +3,7 @@ import getUserModel from "./get-user.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import httpStatus from "../../../utils/httpStatus.js";
 import authorizationService from "../../authorization/authorization.service.js";
+import { parseMetricRecordWindow } from "../../../utils/metricRecordWindow.js";
 
 const VALID_KYC_STATUSES = new Set([
   "pending",
@@ -179,4 +180,3 @@ const getUserService = {
 export { getUsers, getUserById, getDescendantRoles };
 
 export default getUserService;
-import { parseMetricRecordWindow } from "../../../utils/metricRecordWindow.js";

@@ -43,15 +43,12 @@ test("aggregates customer counts and preserves decimal balances, genuine zero, a
   let wallet = { amount: "9007199254740993.01", missing_wallets: 0 };
   t.mock.method(pool, "execute", async (sql, params) => {
     assert.match(sql, /r\.slug = 'US'/);
-    if (sql.includes("AS current_count")) {
-      assert.match(sql, /UNIX_TIMESTAMP\(u\.created_at\) >= \? AND UNIX_TIMESTAMP\(u\.created_at\) < \?/);
-      assert.equal(params[0], params[1]);
-      assert.equal(params[0] - params[2], params[3] - params[0]);
-      return [[signups]];
-    }
+    assert.match(sql, /UNIX_TIMESTAMP\(u\.created_at\) >= \? AND UNIX_TIMESTAMP\(u\.created_at\) < \?/);
+    assert.equal(params[0], params[3]);
+    assert.equal(params[0] - params[2], params[1] - params[0]);
     assert.match(sql, /SUM\(w\.mainbalance \+ w\.pgbalance \+ w\.qrbalance \+ w\.settlementwallet\)/);
     assert.doesNotMatch(sql, /lockamount|wallet_ledger_entries/);
-    return [[wallet]];
+    return [[{ ...signups, ...wallet }]];
   });
 
   const first = await getBusinessPerformance({ period: "24h" });
