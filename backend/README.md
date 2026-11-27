@@ -6,9 +6,9 @@ The Aadhaar, PAN, bank, DigiLocker, and media HTTP routes are intentionally not 
 
 ## Configuration
 
-Copy `.env.example` to `.env` and provide PayTeam-only values. `src/config/env.js` loads this file from the backend directory regardless of the shell's current directory. Required startup settings include application name/environment/port, a `payteam_*` database, Redis host/port and `payteam:` key prefix, JWT secret, KYC OTP secret, and versioned KYC encryption keys. Production additionally requires authenticated Redis, HTTPS frontend origins, Cloudinary credentials, and IDTO provider configuration.
+Copy `.env.example` to `.env` and provide PayTeam-only values. `src/config/env.js` loads this file from the backend directory regardless of the shell's current directory, before runtime configuration is evaluated. `APP_ENV` takes precedence over `NODE_ENV` and defaults to `development`; development Redis defaults to loopback with the `payteam:development` prefix. Tests and production require explicit Redis host and prefix values. Startup still requires a `payteam_*` database, JWT secret, KYC OTP secret, and active environment-specific KYC encryption keys. Production additionally requires authenticated Redis, HTTPS frontend origins, Cloudinary credentials, and IDTO provider configuration.
 
-The local `.env` contains no copied AquaPay credentials. The previous local configuration is preserved separately in ignored `.env.aquapay.local` and is not a PayTeam configuration source.
+The local `.env` is ignored and may contain developer-owned values. Keep its secrets private, and configure a dedicated PayTeam database and credentials before starting the API. Legacy `REDIS_URL` settings are not used; configure PayTeam Redis host, port, password, and namespace instead.
 
 ## Database
 
