@@ -80,7 +80,7 @@ Do not add redundant user columns until PayTeam signs off the serializer and fie
 
 ## Environment and local isolation
 
-- `backend/src/config/env.js` loads only `backend/.env` regardless of shell working directory and validates environment mode, PayTeam database name (`payteam_*`), Redis namespace (`payteam:`), OTP policy, and production integration requirements. DB/Redis/JWT/Cloudinary/provider modules consume the PayTeam names. Startup validates database, Redis, JWT, identity encryption, DigiLocker signature policy, and production provider configuration.
+- `backend/src/config/env.js` loads only `backend/.env` regardless of shell working directory and validates environment mode, PayTeam database name (`payteam_*`), Redis namespace (`payteam:`), OTP policy, and production integration requirements. DB/Redis/JWT/Cloudinary/provider modules consume the PayTeam names. Startup validates database, Redis, JWT, identity, provider-session and bank-account encryption, DigiLocker signature policy, and production provider configuration.
 - Local `backend/.env` now identifies PayTeam and points at loopback plus a `payteam_dev` database; secret fields are blank so startup intentionally fails until unique local credentials/keys are supplied. The former AquaPay local environment was preserved in ignored `backend/.env.aquapay.local` without printing its values. It is not read as PayTeam config and must not be copied into PayTeam deployments.
 - `backend/.env.example` uses placeholders only. `frontend/.env.example` contains only the local API base URL. `.gitignore` excludes `.env*` other than `.env.example`, private key/certificate formats, uploads, builds, and coverage.
 - Existing encryption uses separate versioned keys for identity and provider-session payloads plus a bank-account key. A generic `ENCRYPTION_KEY` would not be consumed by this code, so it was not introduced. A `LOG_LEVEL` setting is also unsupported by the current console logger. Customer/admin origins currently share one Vite frontend; use the existing `CORS_ORIGINS` allowlist until separate apps are approved. No default company/scheme variables were added without values or behavior approval.
@@ -112,7 +112,7 @@ The PayTeam GitHub remote is `https://github.com/PriyanshuuuSinghh/PayTeam.git`.
 Checks completed on the Phase 0 workspace:
 
 - `npm.cmd ls --depth=0` in `backend/` and `frontend/` — both dependency trees resolve.
-- `npm.cmd test` in `backend/` — 399 tests passed, 0 failed. This includes migration ordering, security, KYC, rejection/retry, and agreement fail-closed coverage.
+- `npm.cmd test` in `backend/` — 400 tests passed, 0 failed. This includes migration ordering, security, KYC, rejection/retry, agreement fail-closed, and bank-key validation coverage.
 - `npm.cmd run build` in `frontend/` — passed. Vite reported the existing large-chunk advisory (>500 kB).
 - `npm.cmd run lint` in `frontend/` — passed with existing lint warnings; no lint errors.
 - `node src/server.js` with the local PayTeam `.env` — failed fast with `KYC_OTP_SECRET is required`, as expected while local secrets are blank.

@@ -5,6 +5,7 @@ import { after, test } from "node:test";
 
 import { validateBankDetails } from "./bankDetails.validator.js";
 import {
+  assertBankAccountEncryptionConfiguration,
   encryptAccountNumber,
   decryptAccountNumber,
 } from "./bankAccountEncryption.js";
@@ -35,6 +36,27 @@ after(() => {
 // ------------------------------------------------------------
 // Validation tests
 // ------------------------------------------------------------
+
+test("Bank encryption configuration requires a valid 32-byte key", () => {
+  const originalKey = process.env.BANK_ACCOUNT_ENCRYPTION_KEY;
+  try {
+    delete process.env.BANK_ACCOUNT_ENCRYPTION_KEY;
+    assert.throws(
+      () => assertBankAccountEncryptionConfiguration(),
+      /Bank account encryption key is not configured/,
+    );
+    process.env.BANK_ACCOUNT_ENCRYPTION_KEY = "not-a-valid-key";
+    assert.throws(
+      () => assertBankAccountEncryptionConfiguration(),
+      /valid 32-byte base64 key/,
+    );
+    process.env.BANK_ACCOUNT_ENCRYPTION_KEY = Buffer.alloc(32, 9).toString("base64");
+    assert.equal(assertBankAccountEncryptionConfiguration(), true);
+  } finally {
+    if (originalKey === undefined) delete process.env.BANK_ACCOUNT_ENCRYPTION_KEY;
+    else process.env.BANK_ACCOUNT_ENCRYPTION_KEY = originalKey;
+  }
+});
 
 function runValidator(body) {
   const req = { body };

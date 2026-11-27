@@ -23,6 +23,12 @@ function getEncryptionKey() {
   return key;
 }
 
+function assertBankAccountEncryptionConfiguration() {
+  const key = getEncryptionKey();
+  key.fill(0);
+  return true;
+}
+
 function encryptAccountNumber(accountNumber) {
   if (typeof accountNumber !== "string" || !/^\d{9,18}$/.test(accountNumber)) {
     throw new Error("Invalid bank account number");
@@ -77,4 +83,8 @@ function decryptAccountNumber(encryptedData) {
   return plaintext.toString("utf8");
 }
 
-export { encryptAccountNumber, decryptAccountNumber };
+export {
+  assertBankAccountEncryptionConfiguration,
+  encryptAccountNumber,
+  decryptAccountNumber,
+};

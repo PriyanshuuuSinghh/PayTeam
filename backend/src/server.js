@@ -7,6 +7,7 @@ import { getAppConfig, getOtpConfig, getRedisConfig, validateProductionIntegrati
 import { assertDigiLockerSignaturePolicy } from "./modules/kyc/document-verification/digilocker/digilocker.signatureConfig.js";
 import { assertIdentityEncryptionConfiguration } from "./modules/kyc/document-verification/shared/identityData.crypto.js";
 import { assertProviderSessionEncryptionConfiguration } from "./modules/kyc/document-verification/shared/providerSession.crypto.js";
+import { assertBankAccountEncryptionConfiguration } from "./modules/kyc/bank-details/bankAccountEncryption.js";
 
 async function start() {
   try {
@@ -19,6 +20,7 @@ async function start() {
 
     assertIdentityEncryptionConfiguration(process.env);
     assertProviderSessionEncryptionConfiguration();
+    assertBankAccountEncryptionConfiguration();
 
     // Validate auth configuration early
     getAuthConfig();
