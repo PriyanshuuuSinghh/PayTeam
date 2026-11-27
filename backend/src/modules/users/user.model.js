@@ -121,6 +121,7 @@ async function insertUser(
     passwordHash,
     roleId,
     companyId,
+    schemeId = null,
     parentId,
     status = "active",
   },
@@ -128,8 +129,8 @@ async function insertUser(
 ) {
   const normalizedMobile = mobile ? normalizeMobile(mobile) : mobile;
   const [result] = await getDb(connection).execute(
-    `INSERT INTO users (name, email, mobile, shopname, address, state, city, pincode, password_hash, role_id, company_id, parent_id, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO users (name, email, mobile, shopname, address, state, city, pincode, password_hash, role_id, company_id, scheme_id, parent_id, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       name,
       email,
@@ -142,6 +143,7 @@ async function insertUser(
       passwordHash,
       roleId,
       companyId || null,
+      schemeId,
       parentId || null,
       status,
     ],

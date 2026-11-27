@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 
 // Auth Pages
 import LoginPage from "../pages/auth/LoginPage";
+import RegisterPage from "../pages/auth/RegisterPage";
 import ForgotPasswordPage from "../pages/auth/ForgotPasswordPage";
 
 // Route Guards
@@ -27,6 +28,7 @@ export function AppRoutes() {
     <Routes>
       {/* 1. Public Authentication Entry Points */}
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
 
       {/* Backward-Compatible Login Aliases */}
       <Route path="/login/admin" element={<Navigate to="/login" replace />} />
@@ -45,7 +47,7 @@ export function AppRoutes() {
       </Route>
 
       {/* 3. Normal User Protected Routes (/user/*) */}
-      <Route element={<UserProtectedRoute requireKyc={true} />}>
+      <Route element={<UserProtectedRoute requireKyc={false} />}>
         <Route path="/user" element={<UserLayout />}>
           <Route index element={<Navigate to="/user/dashboard" replace />} />
           <Route path="dashboard" element={<UserDashboard />} />

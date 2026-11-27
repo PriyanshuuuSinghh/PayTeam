@@ -799,10 +799,13 @@ test("provider timeout is sanitized", async () => {
   });
 });
 
-test("additive MySQL migration persists DigiLocker session ownership, expiry, state and encrypted reference fields", () => {
-  const migration = readFileSync(new URL("../../../../../../database/migrations/008_digilocker_kyc_sessions.sql", import.meta.url), "utf8");
+test("consolidated MySQL migration persists DigiLocker session ownership, expiry, state and encrypted reference fields", () => {
+  const migration = readFileSync(new URL("../../../../../../database/migrations/001_initial_schema.sql", import.meta.url), "utf8");
+  const table = migration.match(/CREATE TABLE kyc_digilocker_sessions \([\s\S]*?\) ENGINE=InnoDB/);
+  assert.ok(table, "missing DigiLocker session table");
+  const definition = table[0];
   for (const token of [
-    "CREATE TABLE IF NOT EXISTS kyc_digilocker_sessions",
+    "CREATE TABLE kyc_digilocker_sessions",
     "user_id BIGINT UNSIGNED NOT NULL",
     "case_id BIGINT UNSIGNED NOT NULL",
     "verification_id BIGINT UNSIGNED NOT NULL",
@@ -815,10 +818,14 @@ test("additive MySQL migration persists DigiLocker session ownership, expiry, st
     "reference_key_authentication_tag BINARY(16)",
     "FOREIGN KEY (user_id) REFERENCES users(id)",
     "FOREIGN KEY (case_id) REFERENCES kyc_cases(id)",
-  ]) assert.ok(migration.includes(token), `missing schema contract ${token}`);
+    "FOREIGN KEY (verification_id) REFERENCES kyc_verifications(id)",
+    "UNIQUE KEY uq_kyc_digilocker_state_hash (authorization_state_hash)",
+    "UNIQUE KEY uq_kyc_digilocker_active_verification (active_verification_id)",
+    "CONSTRAINT chk_kyc_digilocker_reference_key_parts",
+  ]) assert.ok(definition.includes(token), `missing schema contract ${token}`);
   assert.equal(/ALTER\s+TABLE\s+(users|kyc_cases|kyc_steps|kyc_verifications)/i.test(migration), false);
-  assert.equal(/FOREIGN KEY \(verification_id\) REFERENCES kyc_verifications\(id\)\s+ON DELETE CASCADE/i.test(migration), false);
-  assert.match(migration, /verification_id is the base column of active_verification_id/i);
+  assert.equal(/FOREIGN KEY \(verification_id\) REFERENCES kyc_verifications\(id\)\s+ON DELETE CASCADE/i.test(definition), false);
+  assert.match(definition, /verification_id is the base column of active_verification_id/i);
 });
 
 test("Aadhaar shared callback gets reference, user details, then fetches raw XML before persistence", async () => {

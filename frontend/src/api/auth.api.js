@@ -14,6 +14,11 @@ export const loginUser = async (credentials) => {
   return response.data;
 };
 
+export const registerCustomer = async (details) => {
+  const response = await api.post("/auth/register", details);
+  return response.data;
+};
+
 export const getCurrentUser = async (customToken) => {
   const headers = customToken
     ? { Authorization: `Bearer ${customToken}` }
@@ -38,17 +43,32 @@ export const authenticateWithMe = async ({ identifier, password }) => {
     throw new Error(loginRes?.data?.message || "Authentication failed");
   }
 
-  const { accessToken, user: loginUserPayload } = loginRes.data.data;
+  const data = loginRes.data.data;
+  if (data?.otpRequired === true) {
+    if (!data.loginToken || data.accessToken) throw new Error("Invalid login challenge");
+    return data;
+  }
+  return verifyAuthenticatedSession(data);
+};
 
-  // Role-based routing requires an authoritative profile from the server.
+async function verifyAuthenticatedSession(data) {
+  const accessToken = data?.accessToken;
+  if (!accessToken) throw new Error("Authentication token is missing");
   const meRes = await getCurrentUser(accessToken);
-  const verifiedUser = meRes?.data || loginUserPayload;
-  if (!verifiedUser?.id) throw new Error("Could not verify the authenticated account");
+  if (!meRes?.success || !meRes?.data?.id) throw new Error("Could not verify the authenticated account");
+  return { accessToken, user: meRes.data };
+}
 
-  return {
-    accessToken,
-    user: verifiedUser,
-  };
+export const verifyLoginOtp = async ({ loginToken, otp }) => {
+  const response = await api.post("/auth/login/verify-otp", { loginToken, otp });
+  if (!response.data?.success) throw new Error(response.data?.message || "OTP verification failed");
+  return verifyAuthenticatedSession(response.data.data);
+};
+
+export const resendLoginOtp = async (loginToken) => {
+  const response = await api.post("/auth/login/resend-otp", { loginToken });
+  if (!response.data?.success || !response.data?.data?.loginToken) throw new Error(response.data?.message || "OTP resend failed");
+  return response.data.data;
 };
 
 export const forgotPassword = async (identifier) => {
@@ -80,6 +100,9 @@ export const changePassword = async ({ currentPassword, newPassword, confirmPass
 
 export default {
   loginUser,
+  registerCustomer,
+  verifyLoginOtp,
+  resendLoginOtp,
   getCurrentUser,
   authenticateWithMe,
   forgotPassword,

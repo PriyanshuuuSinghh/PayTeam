@@ -1,5 +1,5 @@
 -- PayTeam B2C | 001_initial_schema.sql
--- Revised fresh-install baseline: named registration, verified contacts and password + OTP login.
+-- Revised fresh-install baseline: direct registration, nullable contact verification and password + OTP login.
 -- Derived from AquaPay's 12 SQL migrations; supersedes the unapplied earlier draft.
 -- Oracle MySQL 8.0.16+ (CHECK enforcement); InnoDB; utf8mb4.
 -- Run via database/migrate.js against a NEW payteam_kyc database only.
@@ -102,13 +102,6 @@ CREATE TABLE users (
   CONSTRAINT chk_users_passwordchanged
     CHECK (is_passwordchanged IN (0, 1)),
 
-  CONSTRAINT chk_users_customer_contacts CHECK (
-    role_id <> 2 OR (
-      email_verified_at IS NOT NULL
-      AND mobile_verified_at IS NOT NULL
-    )
-  ),
-
   CONSTRAINT chk_users_role_scheme CHECK (
     (role_id = 1 AND scheme_id IS NULL)
     OR
@@ -165,8 +158,8 @@ CREATE TABLE auth_rate_limits (
   KEY idx_auth_rate_limits_expiry (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Public registration is staged here. No user, wallet or KYC exists until both
--- contact proofs are valid. Keep contact values immutable for this registration.
+-- Reserved for a future verified-contact registration flow.
+-- Direct registration creates the user, wallet and KYC immediately.
 -- Store SHA-256 of a randomly generated 256-bit registration bearer token.
 CREATE TABLE auth_pending_registrations (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -189,7 +182,7 @@ CREATE TABLE auth_pending_registrations (
   CONSTRAINT chk_pending_registration_expiry CHECK (expires_at > created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
--- Purpose-specific OTP records. Only a keyed HMAC of the OTP is persisted.
+-- Reserved purpose-specific OTP records. Development login OTP uses Redis.
 -- One current challenge per registration/channel or login/user; rotate on resend.
 -- No access token may be issued merely because the password was correct.
 CREATE TABLE auth_otp_challenges (
