@@ -1,0 +1,478 @@
+﻿import crypto from "node:crypto";
+import pool from "../../config/db.js";
+
+const SAFE_USER_FIELDS = `u.id, u.name AS name, u.email, u.mobile,
+  u.role_id, u.company_id, u.parent_id AS parent_id, u.status,
+  r.name AS role_name, c.name AS company_name`;
+const RESET_OTP_ATTEMPT_WINDOW_START = "2000-01-01 00:00:00";
+const RESET_OTP_MAX_ATTEMPTS = 5;
+
+async function getConnection() {
+  return pool.getConnection();
+}
+
+async function findPasswordHashForUpdate(connection, userId) {
+  const [rows] = await connection.execute(
+    `SELECT id, password_hash FROM users
+      WHERE id = ? AND status = 'active'
+      LIMIT 1 FOR UPDATE`,
+    [userId],
+  );
+  return rows[0] || null;
+}
+
+async function updatePasswordHash(connection, userId, passwordHash) {
+  const [result] = await connection.execute(
+    "UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+    [passwordHash, userId],
+  );
+  return Number(result.affectedRows) === 1;
+}
+
+async function findUserByIdentifier(identifier, type) {
+  const column = type === "email" ? "email" : "mobile";
+
+  const [rows] = await pool.execute(
+    `SELECT
+       ${SAFE_USER_FIELDS},
+       u.password_hash,
+       k.id AS kyc_case_id,
+       k.status AS kyc_status,
+       k.steps_completed AS kyc_steps_completed,
+       k.business_type AS kyc_business_type
+     FROM users u
+     JOIN roles r ON r.id = u.role_id
+     LEFT JOIN companies c ON c.id = u.company_id
+     LEFT JOIN kyc_cases k ON k.user_id = u.id
+     WHERE u.${column} = ?
+     LIMIT 1`,
+    [identifier],
+  );
+
+  const row = rows[0];
+  if (!row) return null;
+
+  const {
+    kyc_case_id,
+    kyc_status,
+    kyc_steps_completed,
+    kyc_business_type,
+    ...user
+  } = row;
+
+  return {
+    ...user,
+    kyc: kyc_case_id
+      ? {
+          status: kyc_status,
+          steps_completed: kyc_steps_completed,
+          business_type: kyc_business_type,
+        }
+      : null,
+  };
+}
+
+
+async function findActiveUserById(userId) {
+  const [rows] = await pool.execute(
+    `SELECT
+       ${SAFE_USER_FIELDS},
+       u.shopname, u.address, u.state, u.city, u.pincode,
+       p.name AS parent_name,
+       u.created_at,
+       k.id AS kyc_case_id,
+       k.status AS kyc_status,
+       k.steps_completed AS kyc_steps_completed,
+       k.business_type AS kyc_business_type,
+       (
+         SELECT GROUP_CONCAT(ks.step_number ORDER BY ks.step_number ASC)
+           FROM kyc_steps ks
+          WHERE ks.case_id = k.id AND ks.status = 'completed'
+       ) AS kyc_completed_steps_csv,
+       (
+         SELECT MIN(ks2.step_number)
+           FROM kyc_steps ks2
+          WHERE ks2.case_id = k.id AND ks2.status <> 'completed'
+       ) AS kyc_current_step
+     FROM users u
+     JOIN roles r ON r.id = u.role_id
+     LEFT JOIN companies c ON c.id = u.company_id
+     LEFT JOIN users p ON p.id = u.parent_id
+     LEFT JOIN kyc_cases k ON k.user_id = u.id
+     WHERE u.id = ? AND u.status = 'active'
+     LIMIT 1`,
+    [userId],
+  );
+
+  const row = rows[0];
+  if (!row) return null;
+
+  const {
+    kyc_case_id,
+    kyc_status,
+    kyc_steps_completed,
+    kyc_business_type,
+    kyc_completed_steps_csv,
+    kyc_current_step,
+    ...user
+  } = row;
+
+  const completedSteps = kyc_completed_steps_csv
+    ? kyc_completed_steps_csv.split(',').map(Number)
+    : [];
+
+  return {
+    ...user,
+    kyc: kyc_case_id
+      ? {
+          status: kyc_status,
+          steps_completed: kyc_steps_completed,
+          business_type: kyc_business_type,
+          completedSteps,
+          currentStep: kyc_current_step ?? null,
+        }
+      : null,
+  };
+}
+
+
+async function isUserActive(userId) {
+  const [rows] = await pool.execute(
+    "SELECT id FROM users WHERE id = ? AND status = 'active' LIMIT 1",
+    [userId],
+  );
+  return rows.length > 0;
+}
+
+async function isAdmin(userId) {
+  const [rows] = await pool.execute(
+    `SELECT u.id
+       FROM users u
+       JOIN roles r ON r.id = u.role_id
+      WHERE u.id = ?
+        AND u.status = 'active'
+        AND r.id = 1
+        AND r.slug = 'AD'
+      LIMIT 1`,
+    [userId],
+  );
+
+  return rows.length > 0;
+}
+
+async function incrementRateLimitCounter(
+  bucketHash,
+  windowStart,
+  expiresAt,
+  connection = pool,
+) {
+  await connection.execute(
+    `INSERT INTO auth_rate_limits (bucket_hash, window_start, request_count, expires_at)
+     VALUES (?, ?, 1, ?)
+     ON DUPLICATE KEY UPDATE request_count = request_count + 1`,
+    [bucketHash, windowStart, expiresAt],
+  );
+  const [rows] = await connection.execute(
+    `SELECT request_count FROM auth_rate_limits
+     WHERE bucket_hash = ? AND window_start = ? LIMIT 1`,
+    [bucketHash, windowStart],
+  );
+  return rows[0]?.request_count || 0;
+}
+
+async function findResetTokenCandidate(connection, tokenHash) {
+  const [rows] = await connection.execute(
+    `SELECT user_id
+       FROM auth_password_reset_tokens
+      WHERE token_hash = ?
+      LIMIT 1`,
+    [tokenHash],
+  );
+  return rows[0] || null;
+}
+
+async function lockActiveResetToken(connection, userId, tokenHash) {
+  const [rows] = await connection.execute(
+    `SELECT id, user_id, expires_at
+       FROM auth_password_reset_tokens
+      WHERE token_hash = ?
+        AND user_id = ?
+        AND used_at IS NULL
+        AND expires_at > UTC_TIMESTAMP()
+      LIMIT 1
+      FOR UPDATE`,
+    [tokenHash, userId],
+  );
+  return rows[0] || null;
+}
+
+function secureHashEquals(storedHash, expectedHash) {
+  if (
+    typeof storedHash !== "string" ||
+    typeof expectedHash !== "string" ||
+    !/^[a-f0-9]{64}$/i.test(storedHash) ||
+    !/^[a-f0-9]{64}$/i.test(expectedHash)
+  ) {
+    return false;
+  }
+  const stored = Buffer.from(storedHash, "hex");
+  const expected = Buffer.from(expectedHash, "hex");
+  return stored.length === expected.length && crypto.timingSafeEqual(stored, expected);
+}
+
+async function lockActiveResetOtp(connection, userId, resetTokenId, otpHash) {
+  const [rows] = await connection.execute(
+    `SELECT id, token_hash
+       FROM auth_password_reset_tokens
+      WHERE user_id = ?
+        AND id <> ?
+        AND used_at IS NULL
+        AND expires_at > UTC_TIMESTAMP()
+      ORDER BY id
+      FOR UPDATE`,
+    [userId, resetTokenId],
+  );
+  return rows.find((row) => secureHashEquals(row.token_hash, otpHash)) || null;
+}
+
+async function getResetOtpAttemptCount(connection, attemptBucketHash) {
+  const [rows] = await connection.execute(
+    `SELECT request_count
+       FROM auth_rate_limits
+      WHERE bucket_hash = ?
+        AND window_start = ?
+        AND expires_at > UTC_TIMESTAMP()
+      LIMIT 1
+      FOR UPDATE`,
+    [attemptBucketHash, RESET_OTP_ATTEMPT_WINDOW_START],
+  );
+  return Number(rows[0]?.request_count || 0);
+}
+
+async function invalidateUserResetCredentials(connection, userId) {
+  await connection.execute(
+    `UPDATE auth_password_reset_tokens
+        SET used_at = UTC_TIMESTAMP()
+      WHERE user_id = ?
+        AND used_at IS NULL`,
+    [userId],
+  );
+}
+
+async function createPasswordReset({
+  userId,
+  tokenHash,
+  otpHash,
+  ttlMinutes,
+  otpTtlMinutes,
+}) {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    await connection.execute("SELECT id FROM users WHERE id = ? FOR UPDATE", [
+      userId,
+    ]);
+    await invalidateUserResetCredentials(connection, userId);
+    const [result] = await connection.execute(
+      `INSERT INTO auth_password_reset_tokens (user_id, token_hash, expires_at)
+       VALUES (?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE))`,
+      [userId, tokenHash, ttlMinutes],
+    );
+    await connection.execute(
+      `INSERT INTO auth_password_reset_tokens (user_id, token_hash, expires_at)
+       VALUES (?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE))`,
+      [userId, otpHash, otpTtlMinutes],
+    );
+    const [rows] = await connection.execute(
+      "SELECT expires_at FROM auth_password_reset_tokens WHERE id = ? LIMIT 1",
+      [result.insertId],
+    );
+    await connection.commit();
+    return rows[0]?.expires_at;
+  } catch (error) {
+    await connection.rollback().catch(() => {});
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+async function checkPasswordResetCredentials({
+  tokenHash,
+  otpHash,
+  attemptBucketHash,
+}) {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const candidate = await findResetTokenCandidate(connection, tokenHash);
+    if (!candidate) {
+      await connection.commit();
+      return false;
+    }
+
+    const userId = candidate.user_id;
+    await connection.execute("SELECT id FROM users WHERE id = ? FOR UPDATE", [
+      userId,
+    ]);
+    const resetToken = await lockActiveResetToken(connection, userId, tokenHash);
+    if (!resetToken) {
+      await connection.commit();
+      return false;
+    }
+
+    const previousAttempts = await getResetOtpAttemptCount(
+      connection,
+      attemptBucketHash,
+    );
+    if (previousAttempts >= RESET_OTP_MAX_ATTEMPTS) {
+      await invalidateUserResetCredentials(connection, userId);
+      await connection.commit();
+      return false;
+    }
+
+    const otp = await lockActiveResetOtp(
+      connection,
+      userId,
+      resetToken.id,
+      otpHash,
+    );
+    if (otp) {
+      await connection.commit();
+      return true;
+    }
+
+    const attempts = await incrementRateLimitCounter(
+      attemptBucketHash,
+      RESET_OTP_ATTEMPT_WINDOW_START,
+      resetToken.expires_at,
+      connection,
+    );
+    if (attempts >= RESET_OTP_MAX_ATTEMPTS) {
+      await invalidateUserResetCredentials(connection, userId);
+    }
+    await connection.commit();
+    return false;
+  } catch (error) {
+    await connection.rollback().catch(() => {});
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+async function consumePasswordReset({
+  tokenHash,
+  otpHash,
+  attemptBucketHash,
+  passwordHash,
+}) {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [candidates] = await connection.execute(
+      `SELECT token.user_id, account.email, account.mobile
+       FROM auth_password_reset_tokens token
+       JOIN users account ON account.id = token.user_id
+       WHERE token.token_hash = ? LIMIT 1`,
+      [tokenHash],
+    );
+    if (!candidates[0]) {
+      await connection.commit();
+      return null;
+    }
+
+    const userId = candidates[0].user_id;
+    await connection.execute("SELECT id FROM users WHERE id = ? FOR UPDATE", [
+      userId,
+    ]);
+    const validToken = await lockActiveResetToken(connection, userId, tokenHash);
+    if (!validToken) {
+      await connection.commit();
+      return null;
+    }
+
+    const previousAttempts = await getResetOtpAttemptCount(
+      connection,
+      attemptBucketHash,
+    );
+    if (previousAttempts >= RESET_OTP_MAX_ATTEMPTS) {
+      await invalidateUserResetCredentials(connection, userId);
+      await connection.commit();
+      return null;
+    }
+
+    const validOtp = await lockActiveResetOtp(
+      connection,
+      userId,
+      validToken.id,
+      otpHash,
+    );
+    if (!validOtp) {
+      const attempts = await incrementRateLimitCounter(
+        attemptBucketHash,
+        RESET_OTP_ATTEMPT_WINDOW_START,
+        validToken.expires_at,
+        connection,
+      );
+      if (attempts >= RESET_OTP_MAX_ATTEMPTS) {
+        await invalidateUserResetCredentials(connection, userId);
+      }
+      await connection.commit();
+      return null;
+    }
+
+    await connection.execute(
+      "UPDATE users SET password_hash = ? WHERE id = ?",
+      [passwordHash, userId],
+    );
+    await invalidateUserResetCredentials(connection, userId);
+    await connection.commit();
+    return { email: candidates[0].email, mobile: candidates[0].mobile };
+  } catch (error) {
+    await connection.rollback().catch(() => {});
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+async function invalidatePasswordReset(tokenHash) {
+  await pool.execute(
+    `UPDATE auth_password_reset_tokens SET used_at = UTC_TIMESTAMP()
+     WHERE token_hash = ? AND used_at IS NULL`,
+    [tokenHash],
+  );
+}
+
+const authModel = {
+  getConnection,
+  findPasswordHashForUpdate,
+  updatePasswordHash,
+  findUserByIdentifier,
+  findActiveUserById,
+  isUserActive,
+  isAdmin,
+  incrementRateLimitCounter,
+  createPasswordReset,
+  checkPasswordResetCredentials,
+  consumePasswordReset,
+  invalidatePasswordReset,
+};
+
+export {
+  getConnection,
+  findPasswordHashForUpdate,
+  updatePasswordHash,
+  findUserByIdentifier,
+  findActiveUserById,
+  isUserActive,
+  isAdmin,
+  incrementRateLimitCounter,
+  createPasswordReset,
+  checkPasswordResetCredentials,
+  consumePasswordReset,
+  invalidatePasswordReset,
+};
+
+export default authModel;

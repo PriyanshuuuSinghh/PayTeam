@@ -1,0 +1,44 @@
+
+{
+  "name": "payteam-backend",
+  "version": "1.0.0",
+  "description": "PayTeam B2C fintech KYC backend API",
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=20.13.0"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "migrate": "node database/migrate.js",
+    "seed": "node database/seed.js",
+    "digilocker:mock-cert": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/generate-digilocker-mock-certificate.ps1",
+    "test": "node --test",
+    "check:db": "node src/config/check-db-connection.js",
+    "check:cloudinary": "node scripts/check-cloudinary-connection.js"
+  },
+  "dependencies": {
+    "@xmldom/xmldom": "^0.9.12",
+    "bcryptjs": "^3.0.3",
+    "cloudinary": "^2.11.0",
+    "cors": "^2.8.6",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "file-type": "^22.3.0",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^2.5.0",
+    "mysql2": "^3.12.0",
+    "redis": "^6.3.1",
+    "xml-crypto": "^6.4.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  },
+  "overrides": {
+    "nodemon": {
+      "minimatch": "11.0.1"
+    }
+  }
+}
