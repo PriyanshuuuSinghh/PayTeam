@@ -1,6 +1,6 @@
 # PayTeam Phase 0 audit
 
-**Status:** Phase 0 code and documentation audit completed in the AquaPay workspace. The PayTeam repository has not yet been pushed. This is an engineering inventory, not launch approval.
+**Status:** Phase 0 code and documentation audit completed in the AquaPay workspace. PayTeam is published on its independent `origin/main` branch. This is an engineering inventory, not launch approval.
 
 ## Source and Git inventory
 
