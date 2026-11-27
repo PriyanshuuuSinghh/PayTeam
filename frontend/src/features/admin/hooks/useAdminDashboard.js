@@ -4,26 +4,19 @@ import {
   fetchBackendUsers,
   fetchBackendDescendantRoles,
   createBackendUser,
-  updateBackendUser,
-  adminLogout
+  updateBackendUser
 } from '../services/adminApi';
 
 export function useAdminDashboard() {
   // Navigation State
-  const [activeTab, setActiveTab] = useState('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [openNavCategory, setOpenNavCategory] = useState({
-    Member: true,
-  });
-
-  const toggleCategory = useCallback((cat) => {
-    setOpenNavCategory((prev) => ({ ...prev, [cat]: !prev[cat] }));
-  }, []);
 
   // Real Database Users State
   const [users, setUsers] = useState([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
+  const [lastUserLoad, setLastUserLoad] = useState(null);
+  const [userLoadError, setUserLoadError] = useState(null);
   const [permittedRoles, setPermittedRoles] = useState([]);
   const [selectedRoleId, setSelectedRoleId] = useState("");
   const userLoadRequestRef = useRef(0);
@@ -31,29 +24,28 @@ export function useAdminDashboard() {
   // Search & Filter State
   const [memberSearch, setMemberSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
-  const [cmdSearchQuery, setCmdSearchQuery] = useState('');
 
   // Modals
-  const [showCommandModal, setShowCommandModal] = useState(false);
   const [actionModalUser, setActionModalUser] = useState(null);
   const [addAgentModalOpen, setAddAgentModalOpen] = useState(false);
 
   // Fetch real users from backend API
-  const loadUsers = useCallback(async (roleId) => {
+  const loadUsers = useCallback(async (roleId, metricParams) => {
     const requestId = ++userLoadRequestRef.current;
+    const key = metricParams ? new URLSearchParams(metricParams).toString() : String(roleId ?? "");
     try {
       setIsLoadingUsers(true);
-      const res = await fetchBackendUsers(roleId ? { roleId } : {});
+      setUserLoadError(null);
+      const res = await fetchBackendUsers(metricParams ?? (roleId ? { roleId } : {}));
       if (requestId !== userLoadRequestRef.current) return;
-      if (res && res.data) {
-        setUsers(Array.isArray(res.data) ? res.data : []);
-      } else {
-        setUsers([]);
-      }
+      if (!Array.isArray(res?.data)) throw new Error("Invalid directory response");
+      setUsers(res.data);
+      setLastUserLoad({ roleId: key, at: new Date() });
     } catch (err) {
       if (requestId !== userLoadRequestRef.current) return;
       setUsers([]);
       const message = err?.response?.data?.message || "Unable to load users. Please try again.";
+      setUserLoadError({ roleId: key, message });
       toast.error(message);
       if (import.meta.env.DEV) {
         console.warn("Admin user directory request failed", {
@@ -90,59 +82,15 @@ export function useAdminDashboard() {
 
   // Current active view heading helper
   const getCurrentRoleTitle = useCallback(() => {
-    if (activeTab === 'all-users' && selectedRoleId) {
+    if (selectedRoleId) {
       return permittedRoles.find((role) => String(role.id) === String(selectedRoleId))?.name || 'User';
     }
-    switch (activeTab) {
-      case 'all-users':
-        return 'All Users';
-      case 'retailer':
-        return 'Retailer';
-      case 'distributor':
-        return 'Distributor';
-      case 'master-distributor':
-        return 'Master Distributor';
-      case 'cnf-asm':
-        return 'CNF / ASM';
-      case 'sh':
-        return 'State Head (SH)';
-      case 'nsm-zsh':
-        return 'NSM / ZSH';
-      case 'sub-admin':
-        return 'Sub Admin';
-      case 'kyc':
-        return 'KYC Compliance';
-      case 'reports':
-        return 'Audit & Reports';
-      default:
-        return 'Member';
-    }
-  }, [activeTab, selectedRoleId, permittedRoles]);
+    return 'All Users';
+  }, [selectedRoleId, permittedRoles]);
 
   // Filtered members list based on real backend data
   const filteredMembers = useMemo(() => {
     return users.filter((u) => {
-      // Role filtering
-      const roleName = String(u.role_name || '').toLowerCase();
-      const roleSlug = String(u.role_slug || '').toLowerCase();
-
-      let roleMatch = true;
-      if (activeTab === 'retailer') {
-        roleMatch = roleName === 'retailer' || roleSlug === 'rt';
-      } else if (activeTab === 'distributor') {
-        roleMatch = roleName === 'distributor' || roleSlug === 'dt';
-      } else if (activeTab === 'master-distributor') {
-        roleMatch = roleName.includes('master') || roleSlug === 'md';
-      } else if (activeTab === 'cnf-asm') {
-        roleMatch = roleName.includes('cnf') || roleSlug === 'cnf';
-      } else if (activeTab === 'sh') {
-        roleMatch = roleName === 'sh' || roleSlug === 'sh';
-      } else if (activeTab === 'nsm-zsh') {
-        roleMatch = roleName.includes('nsm') || roleSlug === 'nsm';
-      } else if (activeTab === 'sub-admin') {
-        roleMatch = roleName.includes('sub admin') || roleSlug === 'sa';
-      }
-
       // Search matching: name, mobile, email, shopname, id
       const q = memberSearch.toLowerCase().trim();
       const searchMatch =
@@ -161,9 +109,9 @@ export function useAdminDashboard() {
           ? u.status === 'active'
           : u.status !== 'active';
 
-      return roleMatch && searchMatch && statusMatch;
+      return searchMatch && statusMatch;
     });
-  }, [users, activeTab, memberSearch, statusFilter]);
+  }, [users, memberSearch, statusFilter]);
 
   // Real backend user creation
   const handleOnboardAgent = useCallback(
@@ -247,44 +195,8 @@ export function useAdminDashboard() {
     []
   );
 
-  // Real statistics derived from database
-  const stats = useMemo(() => {
-    const total = users.length;
-    const active = users.filter((u) => u.status === 'active').length;
-    const retailers = users.filter(
-      (u) =>
-        String(u.role_name || '').toLowerCase() === 'retailer' ||
-        String(u.role_slug || '').toLowerCase() === 'rt'
-    ).length;
-    const distributors = users.filter(
-      (u) =>
-        String(u.role_name || '').toLowerCase() === 'distributor' ||
-        String(u.role_slug || '').toLowerCase() === 'dt'
-    ).length;
-    const pendingKyc = users.filter(
-      (u) => !u.kyc || u.kyc?.status === 'pending' || u.kyc?.status === 'in_progress'
-    ).length;
-    const verifiedKyc = users.filter(
-      (u) =>
-        u.kyc?.status === 'verified' ||
-        u.kyc?.status === 'completed' ||
-        u.kyc?.status === 'submitted'
-    ).length;
-
-    return {
-      total,
-      active,
-      retailers,
-      distributors,
-      pendingKyc,
-      verifiedKyc,
-    };
-  }, [users]);
-
   return {
     // Navigation
-    activeTab,
-    setActiveTab,
     permittedRoles,
     selectedRoleId,
     setSelectedRoleId,
@@ -292,15 +204,13 @@ export function useAdminDashboard() {
     setSidebarCollapsed,
     mobileSidebarOpen,
     setMobileSidebarOpen,
-    openNavCategory,
-    toggleCategory,
     getCurrentRoleTitle,
 
     // Real Data & Stats
-    users,
     filteredMembers,
     isLoadingUsers,
-    stats,
+    lastUserLoad,
+    userLoadError,
     loadUsers,
 
     // Filters
@@ -308,12 +218,8 @@ export function useAdminDashboard() {
     setMemberSearch,
     statusFilter,
     setStatusFilter,
-    cmdSearchQuery,
-    setCmdSearchQuery,
 
     // Modals
-    showCommandModal,
-    setShowCommandModal,
     actionModalUser,
     setActionModalUser,
     addAgentModalOpen,
@@ -323,7 +229,6 @@ export function useAdminDashboard() {
     handleOnboardAgent,
     handleUpdateMemberDetails,
     handleExportCSV,
-    adminLogout,
   };
 }
 

@@ -255,8 +255,10 @@ test("get-user service: admin gets all users, non-admin gets only created users"
       return { id: 5, role_id: 7, role_slug: "DT" }; // Distributor
     };
 
-    getUserModel.findAllUsers = async () => {
+    let allUserOptions;
+    getUserModel.findAllUsers = async (options) => {
       called = "findAllUsers";
+      allUserOptions = options;
       return [{ id: 10, name: "User 10" }, { id: 20, name: "User 20" }];
     };
 
@@ -280,6 +282,11 @@ test("get-user service: admin gets all users, non-admin gets only created users"
     const adminUsers = await getUserService.getUsers(1);
     assert.equal(called, "findAllUsers");
     assert.equal(adminUsers.length, 2);
+    await getUserService.getUsers(1, { search: " User ", limit: "11" });
+    assert.equal(allUserOptions.limit, 11);
+    assert.equal(allUserOptions.search, "User");
+    await assert.rejects(getUserService.getUsers(1, { search: "User", limit: "51" }), { statusCode: 400 });
+    await assert.rejects(getUserService.getUsers(5, { search: "User", limit: "11" }), { statusCode: 400 });
 
     // 2. Non-admin gets only their children
     const nonAdminUsers = await getUserService.getUsers(5);

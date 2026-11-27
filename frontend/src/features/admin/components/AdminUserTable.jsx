@@ -20,7 +20,9 @@ export function AdminUserTable({
   setAddAgentModalOpen = () => {},
   setActionModalUser = () => {},
   isLoadingUsers = false,
+  loadError,
   selectedRoleId = "",
+  metricView = false,
 }) {
   return (
     <div className="space-y-5 max-w-7xl mx-auto pb-10">
@@ -37,7 +39,7 @@ export function AdminUserTable({
             </span>
           </div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-            {getCurrentRoleTitle()} Directory
+            {getCurrentRoleTitle()}{metricView ? "" : " Directory"}
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">
             Manage agent profiles, verify compliance status, and inspect downline hierarchy.
@@ -140,15 +142,17 @@ export function AdminUserTable({
                     </div>
                   </td>
                 </tr>
+              ) : loadError ? (
+                <tr><td colSpan="6" className="py-8 text-center text-sm text-rose-700"><p role="alert">{loadError}</p></td></tr>
               ) : filteredMembers.length === 0 ? (
                 <tr>
                   <td colSpan="6" className="text-center py-12 text-slate-400">
                     <div className="max-w-sm mx-auto space-y-1.5">
                       <p className="font-semibold text-slate-700 text-sm">
-                        {selectedRoleId ? `No ${getCurrentRoleTitle()} users found` : "Choose a role directory"}
+                        {metricView ? "No matching customers" : selectedRoleId ? `No ${getCurrentRoleTitle()} users found` : "Choose a role directory"}
                       </p>
                       <p className="text-xs text-slate-400">
-                        {selectedRoleId ? "Try adjusting your search criteria." : "Select a permitted role from the Roles section in the sidebar."}
+                        {metricView || selectedRoleId ? "Try adjusting your search criteria." : "Select a permitted role under Users in the sidebar."}
                       </p>
                     </div>
                   </td>

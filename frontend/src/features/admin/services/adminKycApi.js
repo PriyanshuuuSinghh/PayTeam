@@ -2,6 +2,15 @@ import api from "../../../api/axios";
 
 const root = "/admin/kyc";
 
+export async function getKycQueueSummary(signal) {
+  const { data } = await api.get(`${root}/queue-summary`, { signal });
+  const summary = data?.data;
+  if (!Number.isInteger(summary?.total) || !summary.distribution) {
+    throw new Error("Invalid KYC queue summary");
+  }
+  return summary;
+}
+
 export async function listAdminKycApplications(params = {}) {
   const { data } = await api.get(root, { params });
   return data.data;

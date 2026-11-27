@@ -1,4 +1,5 @@
 import { DigiLockerProviderError } from "../digilocker/digilocker.errors.js";
+import { recordIdtoRequest } from "../../../admin/platformHealth/requestLatency.js";
 
 const REQUEST_TIMEOUT_MS = 15000;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
@@ -142,6 +143,7 @@ function createIdtoHttpClient({
       Accept: responseType === "xml" ? "application/xml, text/xml" : "application/json",
       "Content-Type": "application/json",
     };
+    let failed = false;
     try {
       const response = await fetchImpl(`${config.baseUrl}${endpoint}`, {
         method: "POST",
@@ -169,11 +171,13 @@ function createIdtoHttpClient({
       try { return JSON.parse(rawBody); }
       catch { throw new DigiLockerProviderError("IDTO_INVALID_RESPONSE", response.status, metadata); }
     } catch (error) {
+      failed = true;
       if (error instanceof DigiLockerProviderError) throw error;
       if (error?.name === "AbortError") throw new DigiLockerProviderError("IDTO_TIMEOUT", undefined, undefined, error);
       throw new DigiLockerProviderError("IDTO_NETWORK_ERROR", undefined, undefined, error);
     } finally {
       clearTimeout(timeout);
+      recordIdtoRequest(failed);
     }
   }
 

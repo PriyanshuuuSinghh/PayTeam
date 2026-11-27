@@ -56,10 +56,42 @@ export const adminLogout = () => {
 };
 
 // 2. Real Backend Users Management
-export const fetchBackendUsers = async (params = {}) => {
-  const response = await api.get("/users", { params });
+export const fetchBackendUsers = async (params = {}, { signal } = {}) => {
+  const response = await api.get("/users", { params, signal });
   return response.data;
 };
+
+export async function fetchPlatformHealth(signal) {
+  const { data } = await api.get("/admin/platform-health", { signal });
+  const latency = data?.data?.apiLatency;
+  if (!latency || (latency.p95Ms !== null && !Number.isFinite(latency.p95Ms)) ||
+      !Number.isInteger(latency.sampleCount) || !Number.isInteger(latency.windowMinutes) ||
+      !Array.isArray(latency.history)) {
+    throw new Error("Invalid platform health response");
+  }
+  return data.data;
+}
+
+export async function fetchBusinessPerformance(params, signal) {
+  const { data } = await api.get("/admin/business-performance", { params, signal });
+  const metrics = data?.data;
+  if (!Number.isInteger(metrics?.signups?.current) || !metrics.walletBalance) {
+    throw new Error("Invalid business performance response");
+  }
+  return metrics;
+}
+
+export async function fetchBusinessInsights(params, signal) {
+  const { data } = await api.get("/admin/business-insights", { params, signal });
+  const insights = data?.data;
+  if (!Number.isInteger(insights?.kycFunnel?.totalCases) || !Number.isInteger(insights.kycFunnel.approvedCases) ||
+      !Array.isArray(insights.kycFunnel.steps) || !Number.isInteger(insights.activeCustomers) ||
+      !Number.isInteger(insights.totalCustomers)) {
+    throw new Error("Invalid business insights response");
+  }
+  return insights;
+}
+
 
 export const fetchBackendDescendantRoles = async () => {
   const response = await api.get("/users/roles/descendants");

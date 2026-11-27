@@ -21,6 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useSearchParams } from "react-router-dom";
 import {
   approveAdminKyc,
   getAdminKycDetails,
@@ -96,7 +97,12 @@ function SectionTitle({ icon: Icon, title, subtitle }) {
 }
 
 export default function AdminKycReview() {
-  const [status, setStatus] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const status = searchParams.get("status") ?? "";
+  const from = searchParams.get("from");
+  const to = searchParams.get("to");
+  const step = searchParams.get("step");
+  const isCohort = Boolean(from && to);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [applications, setApplications] = useState([]);
@@ -117,7 +123,11 @@ export default function AdminKycReview() {
     setLoading(true);
     setListError("");
     try {
-      const result = await listAdminKycApplications({ ...(status ? { status } : {}), page, limit: 10 });
+      const result = await listAdminKycApplications({
+        ...(status ? { status } : {}),
+        ...(isCohort ? { from, to, ...(step ? { step } : {}) } : {}),
+        page, limit: 10,
+      });
       if (requestId !== listRequestRef.current) return;
       setApplications(Array.isArray(result?.applications) ? result.applications : []);
       setPagination(result?.pagination || {});
@@ -128,7 +138,7 @@ export default function AdminKycReview() {
     } finally {
       if (requestId === listRequestRef.current) setLoading(false);
     }
-  }, [page, status]);
+  }, [page, status, isCohort, from, to, step]);
 
   useEffect(() => {
     loadList();
@@ -192,6 +202,7 @@ export default function AdminKycReview() {
     try {
       if (decision === "approve") await approveAdminKyc(selectedId);
       else await rejectAdminKyc(selectedId, trimmedReason);
+      window.dispatchEvent(new Event("payteam:kyc-reviewed"));
       toast.success(decision === "approve" ? "KYC application approved." : "KYC application rejected.");
       closeCaseAfterDecision();
       await loadList();
@@ -215,7 +226,7 @@ export default function AdminKycReview() {
     return !query || [item.case_id, item.user_id, item.name, item.email, item.mobile]
       .some((value) => String(value ?? "").toLowerCase().includes(query));
   });
-  const selectedFilter = FILTERS.find((item) => item.value === status)?.label || "Awaiting review";
+  const selectedFilter = !status && isCohort ? "All cohort cases" : FILTERS.find((item) => item.value === status)?.label || "Awaiting review";
   const application = details?.application;
   const actionable = ["submitted", "under_review"].includes(application?.kyc_status);
 
@@ -275,9 +286,16 @@ export default function AdminKycReview() {
           <div className="flex items-center gap-2 text-xs text-slate-500">
             <Filter className="h-4 w-4 text-slate-400" />
             <label htmlFor="admin-kyc-filter" className="font-medium">Status</label>
-            <select id="admin-kyc-filter" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); setSearch(""); }}
+            <select id="admin-kyc-filter" value={status} onChange={(event) => {
+              const next = new URLSearchParams(searchParams);
+              if (event.target.value) next.set("status", event.target.value);
+              else next.delete("status");
+              setSearchParams(next);
+              setPage(1);
+              setSearch("");
+            }}
               className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-blue-500">
-              {FILTERS.map((filter) => <option key={filter.value} value={filter.value}>{filter.label}</option>)}
+              {FILTERS.map((filter) => <option key={filter.value} value={filter.value}>{isCohort && !filter.value ? "All cohort cases" : filter.label}</option>)}
             </select>
           </div>
         </div>

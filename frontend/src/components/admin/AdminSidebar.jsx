@@ -1,271 +1,161 @@
-import React, { useState } from "react";
+import React, { useEffect } from "react";
 import {
-  LayoutDashboard,
-  Users,
-  UserPlus,
-  ShieldCheck,
-  BarChart3,
-  User,
-  Settings,
-  LogOut,
-  ChevronDown,
-  X,
-  CreditCard,
-  Wallet,
-  FileText,
-  Send,
-  QrCode,
-  Landmark,
+  ArrowLeftRight, Bell, ChartNoAxesColumnIncreasing, ClipboardList, LayoutGrid,
+  LogOut, MessageCircle, RotateCcw, Settings, ShieldAlert, ShieldCheck,
+  SquarePlus, Users, Wallet,
 } from "lucide-react";
-import { useNavigate, useLocation, Link } from "react-router-dom";
+import { Link, NavLink, useLocation, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { ROLE_NAVIGATION } from "../../config/roleNavigation";
-import { RoleNavigationSection } from "../common/RoleNavigationSection";
+import { useAuth } from "../../context/AuthContext";
+import { Sheet, SheetContent, SheetTitle } from "../ui/sheet";
 
-export function AdminSidebar({
-  sidebarCollapsed = false,
-  setSidebarCollapsed = () => {},
-  mobileSidebarOpen = false,
-  setMobileSidebarOpen = () => {},
-  activeTab,
-  setActiveTab,
-  onOpenCreateModal,
-}) {
-  const navigate = useNavigate();
-  const location = useLocation();
+const groups = [
+  { items: [
+    { label: "Dashboard", icon: LayoutGrid, path: "/admin/dashboard" },
+    { label: "Analytics", icon: ChartNoAxesColumnIncreasing },
+  ] },
+  { label: "Customer Management", items: [
+    { label: "Users", icon: Users, path: "/admin/users" },
+    { label: "KYC Management", icon: ShieldCheck, path: "/admin/kyc" },
+  ] },
+  { label: "Financial Operations", items: [
+    { label: "Transactions", icon: ArrowLeftRight },
+    { label: "Wallet Management", icon: Wallet },
+    { label: "Withdrawals", icon: SquarePlus },
+    { label: "Refunds", icon: RotateCcw },
+    { label: "Reconciliation", icon: ClipboardList },
+  ] },
+  { label: "Business Management", items: [
+    { label: "Scheme Manager", icon: Settings },
+    { label: "Support & Complaints", icon: MessageCircle },
+  ] },
+  { label: "System", items: [
+    { label: "Notifications", icon: Bell },
+    { label: "Risk & Fraud", icon: ShieldAlert },
+    { label: "Admin & Roles", icon: Users },
+    { label: "Settings", icon: Settings },
+  ] },
+];
 
-  const currentUser = (() => {
-    try {
-      return JSON.parse(
-        localStorage.getItem("adminUser") ||
-          localStorage.getItem("user") ||
-          "{}"
-      );
-    } catch {
-      return {};
-    }
-  })();
+function SidebarContents({ compact = false, permittedRoles, onNavigate }) {
+  const { adminLogout } = useAuth();
+  const { pathname } = useLocation();
+  const [searchParams] = useSearchParams();
+  const selectedRoleId = searchParams.get("roleId");
+  const row = `flex min-h-9 min-w-0 w-full items-center gap-2.5 whitespace-nowrap rounded-lg text-sm transition-colors focus-visible:outline-2 focus-visible:outline-blue-600 ${compact ? "justify-center" : "px-2.5"}`;
 
-  const adminName = currentUser.name || "Administrator";
-  const adminRole = currentUser.role_name || (currentUser.role_id === 1 ? "Super Admin" : "Admin");
-
-  const [openGroups, setOpenGroups] = useState({
-    "admin-users": true,
-  });
-
-  const toggleGroup = (groupId) => {
-    setOpenGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem("accessToken");
-    localStorage.removeItem("user");
-    localStorage.removeItem("adminUser");
+  function signOut() {
+    onNavigate();
     toast.info("Signed out successfully from Admin Console");
-    navigate("/login/admin", { replace: true });
-  };
-
-  const navItems = ROLE_NAVIGATION.AD;
-
-  const isCurrentActive = (item) => {
-    if (activeTab && item.id) {
-      if (item.id === "admin-dashboard" && activeTab === "dashboard") return true;
-      if (
-        item.id === "admin-all-users" &&
-        (activeTab === "all-users" || activeTab === "users")
-      )
-        return true;
-      if (item.id === "admin-kyc" && activeTab === "kyc") return true;
-    }
-    if (item.path && location.pathname === item.path) return true;
-    return false;
-  };
-
-  const handleNavClick = (item) => {
-    if (setMobileSidebarOpen) setMobileSidebarOpen(false);
-
-    if (item.path) {
-      navigate(item.path);
-    }
-    if (setActiveTab) {
-      if (item.id === "admin-dashboard") setActiveTab("dashboard");
-      else if (item.id === "admin-all-users") setActiveTab("all-users");
-      else if (item.id === "admin-create-user") {
-        if (onOpenCreateModal) onOpenCreateModal();
-        setActiveTab("all-users");
-      } else if (item.id === "admin-kyc") setActiveTab("kyc");
-      else if (item.id === "admin-reports") setActiveTab("reports");
-      else if (item.id === "admin-profile") setActiveTab("profile");
-      else if (item.id === "admin-settings") setActiveTab("settings");
-    }
-  };
-
-  const getIcon = (iconName) => {
-    switch (iconName) {
-      case "LayoutDashboard":
-        return LayoutDashboard;
-      case "Users":
-        return Users;
-      case "UserPlus":
-        return UserPlus;
-      case "ShieldCheck":
-        return ShieldCheck;
-      case "BarChart3":
-        return BarChart3;
-      case "User":
-        return User;
-      case "Settings":
-        return Settings;
-      default:
-        return LayoutDashboard;
-    }
-  };
+    adminLogout();
+  }
 
   return (
-    <aside
-      className={`fixed inset-y-0 left-0 z-40 bg-white border-r border-slate-200 transition-all duration-300 ease-in-out flex flex-col ${
-        sidebarCollapsed ? "w-20" : "w-72"
-      } ${
-        mobileSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
-      }`}
-    >
-      {/* Brand Header */}
-      <div className="h-[68px] px-5 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
-        <Link to="/admin/dashboard" className="flex items-center gap-2 overflow-hidden">
-          <img
-            src="/payteam-mark.svg"
-            alt=""
-            className="h-9 w-9 shrink-0 object-contain select-none"
-          />
-          {!collapsed && <span className="text-lg font-bold tracking-tight text-slate-900">PayTeam</span>}
+    <>
+      <div className={`flex h-20 shrink-0 items-center ${compact ? "justify-center" : "px-6"}`}>
+        <Link to="/admin/dashboard" onClick={onNavigate} aria-label="PayTeam dashboard" className="flex items-center gap-2 rounded-lg">
+          <img src="/payteam-mark.svg" alt="" className="size-9 shrink-0" />
+          {!compact && <span className="text-xl font-bold tracking-tight text-slate-950">PayTeam</span>}
         </Link>
-        <button
-          onClick={() => setMobileSidebarOpen(false)}
-          className="md:hidden text-slate-400 hover:text-slate-600 p-1.5 cursor-pointer"
-        >
-          <X className="w-5 h-5" />
-        </button>
       </div>
 
-      {/* Role Badge Header */}
-      {!sidebarCollapsed && (
-        <div className="px-5 py-2.5 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between text-xs">
-          <span className="font-bold text-slate-700 truncate max-w-[150px]">
-            {adminName}
-          </span>
-          <span className="bg-blue-100 text-blue-700 font-bold px-2.5 py-0.5 rounded-full text-[10px] shrink-0">
-            {adminRole}
-          </span>
-        </div>
-      )}
+      <nav aria-label="Admin navigation" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-2">
+        {groups.map(({ label, items }) => (
+          <div key={label ?? "Overview"} className="border-b border-blue-100/70 py-2.5 first:pt-0 last:border-0">
+            {label && !compact && (
+              <h2 title={label} className="mb-1 truncate px-2.5 text-[0.6875rem] font-semibold uppercase leading-5 text-[#42547d]">{label}</h2>
+            )}
+            <ul aria-label={label ?? "Overview"} className="space-y-0.5">
+              {items.map(({ label: itemLabel, icon: Icon, path }) => {
+                const content = (
+                  <>
+                    <Icon aria-hidden="true" className="size-[18px] shrink-0" />
+                    {!compact && <span className="min-w-0 truncate">{itemLabel}</span>}
+                  </>
+                );
 
-      {/* Navigation Tree */}
-      <div className="flex-1 overflow-y-auto px-3.5 py-4 space-y-1 text-[13px] custom-scrollbar">
-        {navItems.map((item) => {
-          if (item.isDynamicRoles) {
-            return (
-              <RoleNavigationSection
-                key={item.id}
-                scope="admin"
-                collapsed={sidebarCollapsed}
-                onNavigate={() => setMobileSidebarOpen(false)}
-                onExpandSidebar={() => setSidebarCollapsed(false)}
-              />
-            );
-          }
-
-          const IconComp = getIcon(item.icon);
-
-          if (item.children) {
-            const isGroupOpen = openGroups[item.id];
-            return (
-              <div key={item.id} className="py-0.5">
-                <button
-                  type="button"
-                  onClick={() => toggleGroup(item.id)}
-                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors cursor-pointer"
-                >
-                  <div className="flex items-center gap-3">
-                    <IconComp className="w-[18px] h-[18px] text-black shrink-0" />
-                    {!sidebarCollapsed && (
-                      <span className="font-semibold text-slate-800">
-                        {item.label}
-                      </span>
+                return (
+                  <li key={itemLabel}>
+                    {path ? (
+                      <NavLink
+                        to={path}
+                        end={path !== "/admin/users"}
+                        onClick={onNavigate}
+                        title={itemLabel}
+                        aria-label={itemLabel}
+                        className={({ isActive }) => `${row} ${isActive ? "bg-[#dfe9fb] font-semibold text-blue-800" : "text-[#293b63] hover:bg-[#eaf0fa]"}`}
+                      >
+                        {content}
+                      </NavLink>
+                    ) : (
+                      <button type="button" disabled className={`${row} cursor-not-allowed text-slate-500`} title={`${itemLabel} — unavailable`} aria-label={`${itemLabel} — unavailable`}>
+                        {content}
+                      </button>
                     )}
-                  </div>
-                  {!sidebarCollapsed && (
-                    <ChevronDown
-                      className={`w-4 h-4 text-slate-400 transition-transform ${
-                        isGroupOpen ? "rotate-180" : ""
-                      }`}
-                    />
-                  )}
-                </button>
+                    {path === "/admin/users" && !compact && (pathname === path || pathname.startsWith(`${path}/`)) && permittedRoles.length > 0 && (
+                      <ul aria-label="Permitted role directories" className="my-1 ml-5 space-y-0.5 border-l border-blue-200 pl-2">
+                        {permittedRoles.map((role) => {
+                          const selected = pathname === path && selectedRoleId === String(role.id);
+                          return (
+                            <li key={role.id}>
+                              <Link
+                                to={`${path}?roleId=${encodeURIComponent(role.id)}`}
+                                onClick={onNavigate}
+                                aria-current={selected ? "page" : undefined}
+                                title={role.name}
+                                className={`block truncate rounded-md px-2 py-1.5 text-sm ${selected ? "bg-[#dfe9fb] font-semibold text-blue-800" : "text-[#293b63] hover:bg-[#eaf0fa]"}`}
+                              >
+                                {role.name}
+                              </Link>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </nav>
 
-                {isGroupOpen && !sidebarCollapsed && (
-                  <div className="pl-7 pr-1 py-1 space-y-0.5 border-l-2 border-slate-100 ml-5 mt-0.5">
-                    {item.children.map((sub) => {
-                      const SubIcon = getIcon(sub.icon);
-                      const active = isCurrentActive(sub);
-                      return (
-                        <button
-                          key={sub.id}
-                          type="button"
-                          onClick={() => handleNavClick(sub)}
-                          className={`w-full text-left px-3 py-2 rounded-lg text-[13px] transition-colors flex items-center gap-2.5 cursor-pointer ${
-                            active
-                              ? "bg-blue-50 text-blue-700 font-bold shadow-2xs"
-                              : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                          }`}
-                        >
-                          <SubIcon className="w-4 h-4 text-black shrink-0" />
-                          <span className="truncate">{sub.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          }
-
-          const active = isCurrentActive(item);
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => handleNavClick(item)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors cursor-pointer ${
-                active
-                  ? "bg-blue-50 text-blue-700 font-bold border-r-4 border-blue-600 shadow-2xs"
-                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-              }`}
-            >
-              <IconComp className="w-[18px] h-[18px] text-black shrink-0" />
-              {!sidebarCollapsed && <span className="truncate">{item.label}</span>}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Footer Profile & Logout */}
-      <div className="p-4 border-t border-slate-100 bg-slate-50 text-xs text-slate-500 flex items-center justify-between shrink-0">
-        {!sidebarCollapsed && (
-          <span className="flex items-center gap-1.5 font-medium text-slate-600">
-            <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            Admin Online
-          </span>
-        )}
-        <button
-          onClick={handleLogout}
-          title="Sign Out of Admin Console"
-          className="flex items-center gap-1.5 text-slate-500 hover:text-rose-600 font-medium transition-colors cursor-pointer"
-        >
-          <LogOut className="w-4 h-4" />
-          {!sidebarCollapsed && <span>Sign Out</span>}
+      <div className="shrink-0 border-t border-blue-100/70 p-3">
+        <button type="button" onClick={signOut} aria-label="Sign out" title={compact ? "Sign out" : undefined} className={`${row} text-[#293b63] hover:bg-[#eaf0fa]`}>
+          <LogOut aria-hidden="true" className="size-[18px] shrink-0" />
+          {!compact && "Sign out"}
         </button>
       </div>
-    </aside>
+    </>
+  );
+}
+
+export function AdminSidebar({ sidebarCollapsed, mobileSidebarOpen, setMobileSidebarOpen, permittedRoles }) {
+  const closeMobile = () => setMobileSidebarOpen(false);
+
+  useEffect(() => {
+    if (!mobileSidebarOpen) return;
+    const desktop = window.matchMedia("(min-width: 48rem)");
+    const closeOnDesktop = () => {
+      if (desktop.matches) setMobileSidebarOpen(false);
+    };
+    closeOnDesktop();
+    desktop.addEventListener("change", closeOnDesktop);
+    return () => desktop.removeEventListener("change", closeOnDesktop);
+  }, [mobileSidebarOpen, setMobileSidebarOpen]);
+
+  return (
+    <>
+      <aside id="admin-sidebar" aria-label="PayTeam sidebar" className="fixed inset-y-0 left-0 z-40 hidden w-(--admin-sidebar-width) flex-col border-r border-[#e5edf8] bg-[#f4f7fc] transition-[width] duration-200 motion-reduce:transition-none md:flex">
+        <SidebarContents compact={sidebarCollapsed} permittedRoles={permittedRoles} onNavigate={closeMobile} />
+      </aside>
+      <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
+        <SheetContent side="left" className="gap-0 border-[#e5edf8] bg-[#f4f7fc] data-[side=left]:w-[min(17rem,85vw)]">
+          <SheetTitle className="sr-only">PayTeam admin navigation</SheetTitle>
+          <SidebarContents permittedRoles={permittedRoles} onNavigate={closeMobile} />
+        </SheetContent>
+      </Sheet>
+    </>
   );
 }
 

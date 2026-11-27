@@ -69,6 +69,22 @@ async function getUsers(actorId, options = {}) {
   if (search) userOptions.search = search;
   else delete userOptions.search;
 
+  if (options.customers !== undefined) {
+    if (!isAdmin(actor)) throw new ApiError(403, "Admin access required", [], "FORBIDDEN");
+    if (options.roleId || !["active", "signups"].includes(options.customers)) {
+      throw new ApiError(400, "Invalid customer record filter", [], "VALIDATION_ERROR");
+    }
+    if (options.customers === "signups") userOptions.metricWindow = parseMetricRecordWindow(options.from, options.to);
+  }
+
+  if (options.limit !== undefined) {
+    const limit = typeof options.limit === "string" && /^\d+$/.test(options.limit) ? Number(options.limit) : NaN;
+    if (!isAdmin(actor) || !search || options.roleId || !Number.isInteger(limit) || limit < 1 || limit > 50) {
+      throw new ApiError(400, "Invalid admin search limit", [], "VALIDATION_ERROR");
+    }
+    userOptions.limit = limit;
+  }
+
   let selectedRoleId;
   if (options.roleId !== undefined && options.roleId !== null && options.roleId !== "") {
     selectedRoleId = Number(options.roleId);
@@ -163,3 +179,4 @@ const getUserService = {
 export { getUsers, getUserById, getDescendantRoles };
 
 export default getUserService;
+import { parseMetricRecordWindow } from "../../../utils/metricRecordWindow.js";

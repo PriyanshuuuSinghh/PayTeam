@@ -1,15 +1,31 @@
 
 import pool from "../../../config/db.js";
 
+function recordFilters(filters = {}) {
+  const { window, step } = filters;
+  if (!window) return { sql: "", params: [] };
+  const params = [window.start, window.end];
+  let sql = ` AND UNIX_TIMESTAMP(kc.created_at) >= ? AND UNIX_TIMESTAMP(kc.created_at) < ?
+    AND EXISTS (SELECT 1 FROM users cu JOIN roles cr ON cr.id = cu.role_id
+                WHERE cu.id = kc.user_id AND cr.slug = 'US')`;
+  if (step) {
+    sql += ` AND (SELECT COUNT(*) FROM kyc_steps ks WHERE ks.case_id = kc.id
+                      AND ks.status = 'completed' AND ks.step_number <= ?) = ?`;
+    params.push(step, step);
+  }
+  return { sql, params };
+}
+
 /**
  * Fetch KYC applications with pagination and status filtering.
  */
-async function findKycApplications({ statuses, limit, offset }) {
+async function findKycApplications({ statuses, limit, offset, filters }) {
   if (!Array.isArray(statuses) || statuses.length === 0) {
     throw new Error("At least one KYC status is required");
   }
 
   const placeholders = statuses.map(() => "?").join(", ");
+  const additional = recordFilters(filters);
 
   const [rows] = await pool.execute(
     `SELECT
@@ -25,10 +41,10 @@ async function findKycApplications({ statuses, limit, offset }) {
        kc.created_at
      FROM kyc_cases kc
      INNER JOIN users u ON u.id = kc.user_id
-     WHERE kc.status IN (${placeholders})
+     WHERE kc.status IN (${placeholders})${additional.sql}
      ORDER BY kc.submitted_at DESC, kc.id DESC
      LIMIT ? OFFSET ?`,
-    [...statuses, limit, offset],
+    [...statuses, ...additional.params, limit, offset],
   );
 
   return rows;
@@ -37,21 +53,53 @@ async function findKycApplications({ statuses, limit, offset }) {
 /**
  * Count KYC applications matching the selected statuses.
  */
-async function countKycApplications(statuses) {
+async function countKycApplications(statuses, filters) {
   if (!Array.isArray(statuses) || statuses.length === 0) {
     throw new Error("At least one KYC status is required");
   }
 
   const placeholders = statuses.map(() => "?").join(", ");
+  const additional = recordFilters(filters);
 
   const [rows] = await pool.execute(
     `SELECT COUNT(*) AS total
-     FROM kyc_cases
-     WHERE status IN (${placeholders})`,
-    statuses,
+     FROM kyc_cases kc
+     WHERE status IN (${placeholders})${additional.sql}`,
+    [...statuses, ...additional.params],
   );
 
   return Number(rows[0].total);
+}
+
+async function getKycQueueSummary(statuses) {
+  const placeholders = statuses.map(() => "?").join(", ");
+  const [[row]] = await pool.execute(
+    `SELECT COUNT(*) AS total,
+            AVG(wait_seconds) AS average_wait_seconds,
+            COUNT(CASE WHEN wait_seconds < 3600 THEN 1 END) AS under_one_hour,
+            COUNT(CASE WHEN wait_seconds BETWEEN 3600 AND 21600 THEN 1 END) AS one_to_six_hours,
+            COUNT(CASE WHEN wait_seconds > 21600 THEN 1 END) AS over_six_hours,
+            COUNT(*) - COUNT(wait_seconds) AS unknown_wait
+       FROM (
+         SELECT CASE WHEN submitted_at <= UTC_TIMESTAMP()
+                     THEN TIMESTAMPDIFF(SECOND, submitted_at, UTC_TIMESTAMP())
+                END AS wait_seconds
+           FROM kyc_cases
+          WHERE status IN (${placeholders})
+       ) AS queue`,
+    statuses,
+  );
+
+  return {
+    total: Number(row.total),
+    averageWaitSeconds: row.average_wait_seconds == null ? null : Number(row.average_wait_seconds),
+    distribution: {
+      underOneHour: Number(row.under_one_hour),
+      oneToSixHours: Number(row.one_to_six_hours),
+      overSixHours: Number(row.over_six_hours),
+      unknownWait: Number(row.unknown_wait),
+    },
+  };
 }
 
 /**
@@ -297,6 +345,7 @@ async function insertStatusHistory(
 }
 
 const adminKycModel = {
+  getKycQueueSummary,
   findKycApplications,
   countKycApplications,
   findKycCaseById,

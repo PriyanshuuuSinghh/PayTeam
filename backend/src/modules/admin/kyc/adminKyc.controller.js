@@ -1,18 +1,30 @@
 
 import adminKycService from "./adminKyc.service.js";
 
+async function getKycQueueSummaryController(_req, res, next) {
+  try {
+    const data = await adminKycService.getKycQueueSummary();
+    return res.set("Cache-Control", "no-store").status(200).json({ success: true, data });
+  } catch (error) {
+    return next(error);
+  }
+}
+
 /**
  * GET /api/admin/kyc
  * Fetch KYC applications.
  */
 async function getKycApplicationsController(req, res, next) {
   try {
-    const { status, page, limit } = req.query;
+    const { status, page, limit, from, to, step } = req.query;
 
     const result = await adminKycService.getKycApplications({
       status,
       page,
       limit,
+      from,
+      to,
+      step,
     });
 
     return res.status(200).json({
@@ -116,6 +128,7 @@ async function rejectKycApplicationController(req, res, next) {
 }
 
 const adminKycController = {
+  getKycQueueSummaryController,
   getKycApplicationsController,
   getKycApplicationDetailsController,
   getKycDocumentAccessController,

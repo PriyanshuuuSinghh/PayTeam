@@ -1,6 +1,7 @@
 
 import adminKycModel from "./adminKyc.model.js";
 import ApiError from "../../../utils/ApiError.js";
+import { parseMetricRecordWindow } from "../../../utils/metricRecordWindow.js";
 import getCloudinary from "../../../config/cloudinary.js";
 
 const ALLOWED_STATUSES = [
@@ -11,6 +12,10 @@ const ALLOWED_STATUSES = [
 ];
 
 const DEFAULT_STATUSES = ["submitted", "under_review"];
+
+function getKycQueueSummary() {
+  return adminKycModel.getKycQueueSummary(DEFAULT_STATUSES);
+}
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
@@ -53,7 +58,7 @@ function parsePositiveId(value, fieldName) {
   return parsed;
 }
 
-async function getKycApplications({ status, page, limit } = {}) {
+async function getKycApplications({ status, page, limit, from, to, step } = {}) {
   let statuses = DEFAULT_STATUSES;
 
   if (status !== undefined && status !== "") {
@@ -95,14 +100,24 @@ async function getKycApplications({ status, page, limit } = {}) {
   }
 
   const offset = (parsedPage - 1) * parsedLimit;
+  let filters;
+  if (from !== undefined || to !== undefined || step !== undefined) {
+    const window = parseMetricRecordWindow(from, to);
+    if (step !== undefined && (typeof step !== "string" || !/^[1-7]$/.test(step))) {
+      throw new ApiError(400, "Invalid KYC step filter", [], "VALIDATION_ERROR");
+    }
+    filters = { window, step: Number(step) || undefined };
+    if (!status) statuses = ["draft", "pending", ...ALLOWED_STATUSES];
+  }
 
   const [applications, total] = await Promise.all([
     adminKycModel.findKycApplications({
       statuses,
       limit: parsedLimit,
       offset,
+      ...(filters ? { filters } : {}),
     }),
-    adminKycModel.countKycApplications(statuses),
+    adminKycModel.countKycApplications(statuses, filters),
   ]);
 
   const totalPages = Math.ceil(total / parsedLimit);
@@ -468,6 +483,7 @@ async function rejectKycApplication(caseId, actorUserId, rejectionReason) {
 }
 
 const adminKycService = {
+  getKycQueueSummary,
   getKycApplications,
   getKycApplicationDetails,
   getKycDocumentAccess,

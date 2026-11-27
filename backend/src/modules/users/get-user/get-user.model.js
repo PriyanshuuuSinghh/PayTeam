@@ -96,6 +96,13 @@ async function findAllUsers(options = {}) {
   const conditions = [];
   const params = [];
 
+  if (options.customers) conditions.push("r.slug = 'US'");
+  if (options.customers === "active") conditions.push("u.status = 'active'");
+  if (options.metricWindow) {
+    conditions.push("UNIX_TIMESTAMP(u.created_at) >= ? AND UNIX_TIMESTAMP(u.created_at) < ?");
+    params.push(options.metricWindow.start, options.metricWindow.end);
+  }
+
   if (options.kycStatus) {
     conditions.push(`k.status = ?`);
     params.push(options.kycStatus);
@@ -123,6 +130,10 @@ async function findAllUsers(options = {}) {
   }
 
   query += ` ORDER BY u.id DESC`;
+  if (options.limit !== undefined) {
+    query += " LIMIT ?";
+    params.push(options.limit);
+  }
 
   const [rows] = await pool.execute(query, params);
   return rows.map(formatUserRow);
