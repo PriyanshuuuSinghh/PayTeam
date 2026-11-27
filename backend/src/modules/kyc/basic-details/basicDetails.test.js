@@ -744,7 +744,9 @@ test("Redis scripts perform challenge lifecycle operations atomically through EV
 
 test("KYC OTP fails closed when Redis is not configured instead of using in-memory storage", async () => {
   const previousRedisHost = process.env.REDIS_HOST;
+  const previousAppEnv = process.env.APP_ENV;
   delete process.env.REDIS_HOST;
+  process.env.APP_ENV = "test";
   try {
     await assert.rejects(
       redisConnection.getRedisClient(),
@@ -753,6 +755,8 @@ test("KYC OTP fails closed when Redis is not configured instead of using in-memo
   } finally {
     if (previousRedisHost === undefined) delete process.env.REDIS_HOST;
     else process.env.REDIS_HOST = previousRedisHost;
+    if (previousAppEnv === undefined) delete process.env.APP_ENV;
+    else process.env.APP_ENV = previousAppEnv;
   }
 });
 

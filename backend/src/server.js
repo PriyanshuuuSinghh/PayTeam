@@ -1,22 +1,32 @@
+import { getAppConfig, getOtpConfig, getRedisConfig, validateProductionIntegrations } from "./config/env.js";
 import { fileURLToPath } from "url";
 
-import pool, { getDatabaseConfig, verifyDatabaseConnection } from "./config/db.js";
-import redisConnection from "./config/redis.js";
 import { getAuthConfig } from "./config/auth.js";
-import { getAppConfig, getOtpConfig, getRedisConfig, validateProductionIntegrations } from "./config/env.js";
 import { assertDigiLockerSignaturePolicy } from "./modules/kyc/document-verification/digilocker/digilocker.signatureConfig.js";
 import { assertIdentityEncryptionConfiguration } from "./modules/kyc/document-verification/shared/identityData.crypto.js";
 import { assertProviderSessionEncryptionConfiguration } from "./modules/kyc/document-verification/shared/providerSession.crypto.js";
 import { assertBankAccountEncryptionConfiguration } from "./modules/kyc/bank-details/bankAccountEncryption.js";
 
+let pool;
+let redisConnection;
+
 async function start() {
   try {
     const appConfig = getAppConfig();
     const signaturePolicy = assertDigiLockerSignaturePolicy(process.env);
-    getDatabaseConfig();
     getRedisConfig();
     getOtpConfig();
     validateProductionIntegrations();
+
+    // Import connection modules only after env.js has loaded backend/.env and
+    // non-secret configuration validation has completed. Their top-level
+    // initialization can otherwise fail before start() handles the error.
+    const database = await import("./config/db.js");
+    pool = database.default;
+    const redis = await import("./config/redis.js");
+    redisConnection = redis.default;
+
+    database.getDatabaseConfig();
 
     assertIdentityEncryptionConfiguration(process.env);
     assertProviderSessionEncryptionConfiguration();
@@ -30,7 +40,7 @@ async function start() {
     const { default: app } = await import("./app.js");
 
     // Verify DB connection before starting server
-    await verifyDatabaseConnection();
+    await database.verifyDatabaseConnection();
     const { default: digilockerModel } = await import("./modules/kyc/document-verification/digilocker/digilocker.model.js");
     await digilockerModel.assertSessionSchema();
     await digilockerModel.assertNoDevelopmentUnverifiedRecords();
@@ -54,7 +64,7 @@ async function start() {
   } catch (error) {
     console.error(`${process.env.APP_NAME || "PayTeam"} startup failed:`, error.message);
     // Ensure pool is closed if it was created
-    await pool.end().catch(() => {});
+    await pool?.end().catch(() => {});
     process.exitCode = 1;
     return null;
   }
@@ -68,8 +78,8 @@ function installGracefulShutdown(server) {
     console.info(`${process.env.APP_NAME || "PayTeam"} received ${signal}; shutting down`);
     server.close(async (serverError) => {
       const results = await Promise.allSettled([
-        pool.end(),
-        redisConnection.closeRedisConnection(),
+        pool?.end(),
+        redisConnection?.closeRedisConnection(),
       ]);
       if (serverError || results.some((result) => result.status === "rejected")) {
         process.exitCode = 1;

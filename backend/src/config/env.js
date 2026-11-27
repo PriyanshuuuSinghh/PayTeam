@@ -31,7 +31,9 @@ function positiveInteger(env, name, fallback, min, max = 10000) {
 
 function getAppConfig(env = process.env) {
   const appName = env.APP_NAME?.trim() || "PayTeam";
-  const appEnv = requiredString(env, "APP_ENV");
+  // APP_ENV is preferred. NODE_ENV is supported for local compatibility; an
+  // unset environment is safe to treat as development, never production.
+  const appEnv = env.APP_ENV?.trim() || env.NODE_ENV?.trim() || "development";
   if (!VALID_APP_ENVS.has(appEnv)) {
     throw new Error("APP_ENV must be development, test, or production");
   }
@@ -51,9 +53,13 @@ function assertPayTeamDatabaseName(databaseName) {
 
 function getRedisConfig(env = process.env) {
   const { environment } = getAppConfig(env);
-  const host = requiredString(env, "REDIS_HOST");
+  const host = env.REDIS_HOST?.trim() || (
+    environment === "development" ? "127.0.0.1" : requiredString(env, "REDIS_HOST")
+  );
   const port = positiveInteger(env, "REDIS_PORT", 6379, 1, 65535);
-  const keyPrefix = requiredString(env, "REDIS_KEY_PREFIX");
+  const keyPrefix = env.REDIS_KEY_PREFIX?.trim() || (
+    environment === "development" ? "payteam:development" : requiredString(env, "REDIS_KEY_PREFIX")
+  );
   if (!/^payteam:[A-Za-z0-9:_-]+$/.test(keyPrefix)) {
     throw new Error("REDIS_KEY_PREFIX must start with payteam:");
   }
