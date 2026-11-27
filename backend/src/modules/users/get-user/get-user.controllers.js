@@ -23,12 +23,16 @@ function getActorId(req) {
 
 const getUsers = asyncHandler(async (req, res) => {
   const actorId = getActorId(req);
-  const { kyc_status, kycStatus, search, roleId } = req.query || {};
+  const { kyc_status, kycStatus, search, roleId, limit, customers, from, to } = req.query || {};
 
   const result = await service.getUsers(actorId, {
     kycStatus: kyc_status || kycStatus,
     search,
     roleId,
+    limit,
+    customers,
+    from,
+    to,
   });
 
   let message = "Users fetched successfully";

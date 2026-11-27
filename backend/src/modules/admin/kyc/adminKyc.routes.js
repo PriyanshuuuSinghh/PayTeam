@@ -17,6 +17,13 @@ router.get(
   adminKycController.getKycApplicationsController,
 );
 
+router.get(
+  "/queue-summary",
+  requireAuth,
+  requireAdmin,
+  adminKycController.getKycQueueSummaryController,
+);
+
 // Fetch details of one KYC application
 router.get(
   "/:caseId",

@@ -525,6 +525,7 @@ test("health and auth endpoints respond with the documented authorization and sa
   const originalActive = authModel.isUserActive;
   const originalFind = authModel.findActiveUserById;
   const originalFindByIdentifier = authModel.findUserByIdentifier;
+  const originalIsAdmin = authModel.isAdmin;
   const originalExecute = pool.execute;
   const account = activeUser({ password_hash: await bcrypt.hash("correct-password", 4) });
   t.mock.method(authModel, "findLoginAccountById", async () => account);
@@ -591,11 +592,98 @@ test("health and auth endpoints respond with the documented authorization and sa
     assert.equal(response.status, 200);
     assert.equal(body.data.name, "Example User");
     assert.equal(JSON.stringify(body).includes("password_hash"), false);
+    const healthPath = `${base}/api/admin/platform-health`;
+    const headers = { authorization: `Bearer ${loginBody.data.accessToken}` };
+    assert.equal((await fetch(healthPath)).status, 401);
+    authModel.isAdmin = async () => false;
+    assert.equal((await fetch(healthPath, { headers })).status, 403);
+    authModel.isAdmin = async () => true;
+    const platformHealth = await fetch(healthPath, { headers });
+    assert.equal(platformHealth.status, 200);
+    assert.equal(platformHealth.headers.get("cache-control"), "no-store");
+    const { apiLatency } = (await platformHealth.json()).data;
+    assert.ok(apiLatency.sampleCount > 0);
+    assert.ok(Number.isFinite(apiLatency.p95Ms));
+    await fetch(`${base}/api/health`);
+    const next = await fetch(healthPath, { headers });
+    assert.equal((await next.json()).data.apiLatency.sampleCount, apiLatency.sampleCount);
+
+    const queuePath = `${base}/api/admin/kyc/queue-summary`;
+    assert.equal((await fetch(queuePath)).status, 401);
+    authModel.isAdmin = async () => false;
+    assert.equal((await fetch(queuePath, { headers })).status, 403);
+    authModel.isAdmin = async () => true;
+
+    let queueRow = {
+      total: 4, average_wait_seconds: "3600.5", under_one_hour: 1,
+      one_to_six_hours: 1, over_six_hours: 1, unknown_wait: 1,
+    };
+    const execute = pool.execute;
+    pool.execute = async (sql, params) => {
+      if (!sql.includes("AS average_wait_seconds")) return execute(sql, params);
+      assert.deepEqual(params, ["submitted", "under_review"]);
+      assert.match(sql, /submitted_at <= UTC_TIMESTAMP\(\)/);
+      assert.match(sql, /TIMESTAMPDIFF\(SECOND, submitted_at, UTC_TIMESTAMP\(\)\)/);
+      assert.match(sql, /wait_seconds < 3600/);
+      assert.match(sql, /wait_seconds BETWEEN 3600 AND 21600/);
+      assert.match(sql, /wait_seconds > 21600/);
+      return [[queueRow]];
+    };
+    const queueResponse = await fetch(queuePath, { headers });
+    assert.equal(queueResponse.status, 200);
+    assert.equal(queueResponse.headers.get("cache-control"), "no-store");
+    assert.deepEqual((await queueResponse.json()).data, {
+      total: 4,
+      averageWaitSeconds: 3600.5,
+      distribution: { underOneHour: 1, oneToSixHours: 1, overSixHours: 1, unknownWait: 1 },
+    });
+
+    queueRow = { total: 0, average_wait_seconds: null, under_one_hour: 0, one_to_six_hours: 0, over_six_hours: 0, unknown_wait: 0 };
+    const emptyQueue = await fetch(queuePath, { headers });
+    assert.deepEqual((await emptyQueue.json()).data, {
+      total: 0,
+      averageWaitSeconds: null,
+      distribution: { underOneHour: 0, oneToSixHours: 0, overSixHours: 0, unknownWait: 0 },
+    });
+
+    const businessPath = `${base}/api/admin/business-performance`;
+    assert.equal((await fetch(businessPath)).status, 401);
+    authModel.isAdmin = async () => false;
+    assert.equal((await fetch(businessPath, { headers })).status, 403);
+    authModel.isAdmin = async () => true;
+    assert.equal((await fetch(`${businessPath}?period=invalid`, { headers })).status, 400);
+
+    const insightsPath = `${base}/api/admin/business-insights`;
+    assert.equal((await fetch(insightsPath)).status, 401);
+    authModel.isAdmin = async () => false;
+    assert.equal((await fetch(insightsPath, { headers })).status, 403);
+    authModel.isAdmin = async () => true;
+    assert.equal((await fetch(`${insightsPath}?period=invalid`, { headers })).status, 400);
+
+    const accountSummaryPath = `${base}/api/admin/account-summary`;
+    assert.equal((await fetch(accountSummaryPath)).status, 401);
+    authModel.isAdmin = async () => false;
+    assert.equal((await fetch(accountSummaryPath, { headers })).status, 403);
+    authModel.isAdmin = async () => true;
+    const executeWithQueue = pool.execute;
+    pool.execute = async (sql, params) => {
+      if (!sql.includes("AS has_retailer_role")) return executeWithQueue(sql, params);
+      assert.match(sql, /k\.status = 'approved'/);
+      assert.match(sql, /k\.status IN \('submitted', 'under_review'\)/);
+      return [[{ total: "3", active: "2", retailers: "0", has_retailer_role: "0", approved: "1", rejected: "0", awaiting_review: "1" }]];
+    };
+    const accountSummary = await fetch(accountSummaryPath, { headers });
+    assert.equal(accountSummary.status, 200);
+    assert.equal(accountSummary.headers.get("cache-control"), "no-store");
+    assert.deepEqual((await accountSummary.json()).data, {
+      total: 3, active: 2, retailers: null, approved: 1, rejected: 0, awaitingReview: 1,
+    });
   } finally {
     await new Promise((resolve) => server.close(resolve));
     authModel.isUserActive = originalActive;
     authModel.findActiveUserById = originalFind;
     authModel.findUserByIdentifier = originalFindByIdentifier;
+    authModel.isAdmin = originalIsAdmin;
     pool.execute = originalExecute;
   }
 });

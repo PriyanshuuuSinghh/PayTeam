@@ -4,6 +4,7 @@ import cors from "cors";
 
 import healthRoutes from "./routes/health.routes.js";
 import adminRoutes from "./modules/admin/admin.routes.js";
+import { measureApiLatency } from "./modules/admin/platformHealth/requestLatency.js";
 import userRoutes from "./modules/users/user.routes.js";
 import authRoutes from "./modules/auth/auth.routes.js";
 import kycRoutes from "./modules/kyc/kyc.routes.js";
@@ -13,6 +14,7 @@ import { getAppConfig } from "./config/env.js";
 
 const app = express();
 
+app.use(measureApiLatency);
 app.use(helmet());
 
 app.use(
