@@ -11,8 +11,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "migrate": "node database/migrate.js",
-    "seed": "node database/seed.js",
+    "migrate": "node database/migrate.js",  
     "digilocker:mock-cert": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/generate-digilocker-mock-certificate.ps1",
     "test": "node --test",
     "check:db": "node src/config/check-db-connection.js",

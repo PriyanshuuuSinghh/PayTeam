@@ -1,401 +1,127 @@
-import path from "path";
-import { fileURLToPath } from "url";
-import fs from "fs";
-import mysql from "mysql2/promise";
-import { assertPayTeamDatabaseName } from "../src/config/env.js";
+import path from 'node:path';
+import fs from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
+import dotenv from 'dotenv';
+import mysql from 'mysql2/promise';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const BASELINE_MIGRATIONS = [
-  "001_initial_schema.sql",
-  "002_auth_security_tables.sql",
+const filename = fileURLToPath(import.meta.url);
+const directory = path.dirname(filename);
+dotenv.config({ path: path.resolve(directory, '../.env') });
+const EXPECTED_DATABASE = 'payteam_kyc';
+const BASELINE = '001_initial_schema.sql';
+const LOCK = 'payteam_kyc:migrations';
+const BASE_TABLES = [
+  'roles', 'companies', 'schemes', 'users', 'user_wallets',
+  'auth_password_reset_tokens', 'auth_rate_limits', 'auth_pending_registrations',
+  'auth_otp_challenges', 'kyc_cases', 'kyc_steps',
+  'kyc_verifications', 'bank_accounts', 'media_assets', 'agreement_acceptances',
+  'kyc_status_history', 'kyc_identity_data', 'kyc_digilocker_sessions',
+  'api_request_metrics',
 ];
 
-// Keep every migration in version order after its prerequisites.
-const MIGRATION_ORDER = Object.freeze([
-  "001_initial_schema.sql",
-  "002_auth_security_tables.sql",
-  "003_kyc_tables.sql",
-  "005_sync_kyc_cases_schema.sql",
-  "006_kyc_identity_data.sql",
-  "007_enforce_single_bank_account_per_case.sql",
-  "008_digilocker_kyc_sessions.sql",
-]);
-
-// Required tables and columns for the existing-database baseline check.
-// This is a sanity check, not a complete schema equivalence check.
-const REQUIRED_COLUMNS = {
-  roles: ["id", "name", "slug"],
-  companies: ["id", "name", "created_at"],
-  users: [
-    "id",
-    "name",
-    "email",
-    "mobile",
-    "company_id",
-    "role_id",
-    "parent_id",
-    "password_hash",
-    "status",
-    "created_at",
-    "updated_at",
-  ],
-  role_hierarchy: ["parent_role_id", "child_role_id"],
-  auth_password_reset_tokens: [
-    "id",
-    "user_id",
-    "token_hash",
-    "expires_at",
-    "used_at",
-    "created_at",
-  ],
-  auth_rate_limits: [
-    "bucket_hash",
-    "window_start",
-    "request_count",
-    "expires_at",
-  ],
-};
-
-function orderMigrationNames(names) {
-  const unique = new Set(names);
-  const unknown = [...unique].filter((name) => !MIGRATION_ORDER.includes(name));
-  if (unknown.length) throw new Error(`Migrations require explicit ordering: ${unknown.join(", ")}`);
-  if (unique.size !== names.length) throw new Error("Duplicate migration filenames detected.");
-  return MIGRATION_ORDER.filter((name) => unique.has(name));
-}
-
-function getMigrationFiles(migrationsDir = path.join(__dirname, "migrations")) {
-
-  if (!fs.existsSync(migrationsDir)) {
-    throw new Error(`Migrations directory not found: ${migrationsDir}`);
+async function getMigrationFiles() {
+  const folder = path.join(directory, 'migrations');
+  const names = (await fs.readdir(folder)).filter(name => name.endsWith('.sql')).sort();
+  if (names[0] !== BASELINE || names.some(name => !/^\d{3}_[a-z0-9_]+\.sql$/.test(name))) {
+    throw new Error(`Expected ${BASELINE}, followed by numbered SQL migrations.`);
   }
-
-  const names = fs
-    .readdirSync(migrationsDir)
-    .filter((file) => file.endsWith(".sql"));
-  const missing = MIGRATION_ORDER.filter((file) => !names.includes(file));
-  if (missing.length) throw new Error(`Required migration files are missing: ${missing.join(", ")}`);
-  return orderMigrationNames(names);
-}
-
-async function ensureMigrationTable(connection) {
-  await connection.query(`
-    CREATE TABLE IF NOT EXISTS schema_migrations (
-      migration VARCHAR(255) NOT NULL PRIMARY KEY,
-      applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB
-      DEFAULT CHARSET=utf8mb4
-      COLLATE=utf8mb4_0900_ai_ci
-  `);
-}
-
-async function getAppliedMigrations(connection) {
-  const [rows] = await connection.query(
-    "SELECT migration FROM schema_migrations",
-  );
-
-  return new Set(rows.map((row) => row.migration));
+  if (new Set(names.map(name => name.slice(0, 3))).size !== names.length) {
+    throw new Error('Duplicate migration numbers are not allowed. Remove old AquaPay migrations.');
+  }
+  return Promise.all(names.map(async name => {
+    const sql = await fs.readFile(path.join(folder, name), 'utf8');
+    // Normalize CRLF so Windows checkout does not change the checksum.
+    const normalized = sql.replace(/\r\n/g, '\n');
+    return { name, sql: normalized, sha256: createHash('sha256').update(normalized).digest('hex') };
+  }));
 }
 
 async function getApplicationTables(connection) {
-  const [rows] = await connection.query(
-    `SELECT TABLE_NAME
-       FROM information_schema.TABLES
-      WHERE TABLE_SCHEMA = DATABASE()
-        AND TABLE_TYPE = 'BASE TABLE'
-        AND TABLE_NAME <> 'schema_migrations'`,
-  );
-
-  return rows.map((row) => row.TABLE_NAME);
-}
-
-async function validateMigrationState(connection, applied, files) {
-  const applicationTables = await getApplicationTables(connection);
-
-  // Fresh database: no application tables and no migration history.
-  if (applied.size === 0 && applicationTables.length === 0) {
-    console.log(
-      "Fresh database detected. Initial migrations are allowed.",
-    );
-    return;
-  }
-
-  // Never mistake an existing schema without migration history for
-  // a fresh database.
-  if (applied.size === 0 && applicationTables.length > 0) {
-    throw new Error(
-      "Application tables exist but no migrations are recorded. " +
-        "Stop and review the existing schema before proceeding.",
-    );
-  }
-
-  // Every recorded migration must still exist in the repository.
-  const unknownMigrations = [...applied].filter(
-    (migration) => !files.includes(migration),
-  );
-
-  if (unknownMigrations.length > 0) {
-    throw new Error(
-      `Unknown migration records found: ${unknownMigrations.join(", ")}. ` +
-        "Check the repository migration history before proceeding.",
-    );
-  }
-
-  // Required baseline migration files must exist.
-  for (const baseline of BASELINE_MIGRATIONS) {
-    if (!files.includes(baseline)) {
-      throw new Error(`Required baseline migration is missing: ${baseline}`);
-    }
-  }
-
-  // Migration history must follow repository order without gaps.
-  let foundPendingMigration = false;
-
-  for (const file of files) {
-    if (!applied.has(file)) {
-      foundPendingMigration = true;
-      continue;
-    }
-
-    if (foundPendingMigration) {
-      throw new Error(
-        `Invalid migration history: ${file} is recorded even though an ` +
-          "earlier migration is missing. Review the database before proceeding.",
-      );
-    }
-  }
-
-  // Existing migration records must begin with migration 001.
-  if (
-    applied.size > 0 &&
-    !applied.has("001_initial_schema.sql")
-  ) {
-    throw new Error(
-      "Invalid migration history: migration 001 is not recorded.",
-    );
-  }
-
-  console.log("Migration history checks passed.");
-}
-
-async function validateExistingSchema(connection) {
-  const [tables] = await connection.query(
-    `SELECT TABLE_NAME
-       FROM information_schema.TABLES
-      WHERE TABLE_SCHEMA = DATABASE()
-        AND TABLE_TYPE = 'BASE TABLE'`,
-  );
-
-  const existingTables = new Set(
-    tables.map((row) => row.TABLE_NAME),
-  );
-
-  const missingTables = Object.keys(REQUIRED_COLUMNS).filter(
-    (table) => !existingTables.has(table),
-  );
-
-  if (missingTables.length > 0) {
-    throw new Error(
-      `Cannot baseline: missing tables: ${missingTables.join(", ")}`,
-    );
-  }
-
-  for (const [table, requiredColumns] of Object.entries(REQUIRED_COLUMNS)) {
-    const [columns] = await connection.query(
-      `SELECT COLUMN_NAME
-         FROM information_schema.COLUMNS
-        WHERE TABLE_SCHEMA = DATABASE()
-          AND TABLE_NAME = ?`,
-      [table],
-    );
-
-    const actualColumns = new Set(
-      columns.map((row) => row.COLUMN_NAME),
-    );
-
-    const missingColumns = requiredColumns.filter(
-      (column) => !actualColumns.has(column),
-    );
-
-    if (missingColumns.length > 0) {
-      throw new Error(
-        `Cannot baseline ${table}: missing columns: ${missingColumns.join(", ")}`,
-      );
-    }
-  }
-
-  console.log("Baseline sanity checks passed.");
-
-  console.warn(
-    "This check validates required tables and columns only. " +
-      "It does not prove that indexes, foreign keys, column types, " +
-      "defaults, or constraints match the original SQL.",
-  );
-}
-
-async function baselineExistingDatabase(connection) {
-  const applied = await getAppliedMigrations(connection);
-
-  const alreadyRecorded = BASELINE_MIGRATIONS.filter(
-    (name) => applied.has(name),
-  );
-  if (applied.size > 0) {
-    throw new Error(
-      "Baseline stopped: migration records already exist. " +
-        "Review migration history before attempting a baseline.",
-    );
-  }
-
-  if (alreadyRecorded.length > 0) {
-    throw new Error(
-      `Baseline stopped: records already exist for ${alreadyRecorded.join(", ")}.`,
-    );
-  }
-
-  const applicationTables = await getApplicationTables(connection);
-
-  if (applicationTables.length === 0) {
-    throw new Error(
-      "Cannot baseline an empty database. Use the normal migration process.",
-    );
-  }
-
-  await validateExistingSchema(connection);
-
-  if (!process.argv.includes("--confirm-schema-reviewed")) {
-    throw new Error(
-      "Schema sanity checks passed, but full schema review is still required. " +
-        "Compare the live columns, indexes, foreign keys, and definitions " +
-        "with migrations 001/002 before using --confirm-schema-reviewed.",
-    );
-  }
-
-  for (const migration of BASELINE_MIGRATIONS) {
-    await connection.query(
-      "INSERT INTO schema_migrations (migration) VALUES (?)",
-      [migration],
-    );
-
-    console.log(`Baselined existing migration: ${migration}`);
-  }
-}
-
-async function runSeeds(connection) {
-  const seedsDir = path.join(__dirname, "seeds");
-
-  if (!fs.existsSync(seedsDir)) {
-    console.log("No seeds directory found. Skipping seeds.");
-    return;
-  }
-
-  const files = fs
-    .readdirSync(seedsDir)
-    .filter((file) => file.endsWith(".sql"))
-    .sort();
-
-  console.log(`Found ${files.length} seed file(s).`);
-
-  for (const file of files) {
-    const seedPath = path.join(seedsDir, file);
-    const sql = fs.readFileSync(seedPath, "utf8");
-
-    console.log(`Running seed: ${file}...`);
-
-    await connection.query(sql);
-
-    console.log(`Seed completed: ${file}`);
-  }
+  const [rows] = await connection.query(`SELECT TABLE_NAME AS name
+    FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_TYPE = 'BASE TABLE' AND TABLE_NAME <> 'schema_migrations'`);
+  return new Set(rows.map(row => row.name));
 }
 
 async function runMigrations() {
   let connection;
-
+  let locked = false;
   try {
-    // Dynamic import ensures backend/.env is loaded before db.js
-    // creates its database pool/configuration.
-    const { getDatabaseConfig } = await import(
-      "../src/config/db.js"
-    );
-
+    if (process.env.DB_NAME !== EXPECTED_DATABASE) {
+      throw new Error(`DB_NAME must be exactly ${EXPECTED_DATABASE}; no AquaPay database is permitted.`);
+    }
+    if (process.argv.slice(2).some(arg => arg !== '--seed')) {
+      throw new Error('Unsupported option. Use node database/migrate.js (initial master data is included).');
+    }
+    const files = await getMigrationFiles();
+    // Reuse AquaPay's config validation and TLS settings, not its production credentials.
+    const { getDatabaseConfig } = await import('../src/config/db.js');
     const config = getDatabaseConfig();
-
-    // Never run a PayTeam migration against an AquaPay or unrelated database.
-    assertPayTeamDatabaseName(config.database);
-
-    const files = getMigrationFiles();
-
-    for (const baseline of BASELINE_MIGRATIONS) {
-      if (!files.includes(baseline)) {
-        throw new Error(`Required baseline migration is missing: ${baseline}`);
-      }
+    if (config.database !== EXPECTED_DATABASE) throw new Error('Unexpected database configuration.');
+    const localHost = ['localhost', '127.0.0.1', '::1'].includes(config.host);
+    if (!localHost && (!config.ssl || !config.ssl.ca || config.ssl.rejectUnauthorized !== true)) {
+      throw new Error('Remote MySQL requires a trusted provider CA via DB_SSL_CA.');
     }
-
-    console.log(
-      `Connecting to database ${config.database} on ${config.host}...`,
-    );
-
     connection = await mysql.createConnection({
-      ...config,
-      multipleStatements: true,
+      ...config, ...(config.ssl ? { ssl: { ...config.ssl, verifyIdentity: true } } : {}),
+      multipleStatements: true, timezone: 'Z',
     });
-
-    await ensureMigrationTable(connection);
-
-    if (process.argv.includes("--baseline-existing")) {
-      await baselineExistingDatabase(connection);
-      console.log("Existing database baseline completed.");
-      return;
+    await connection.query("SET time_zone = '+00:00'");
+    if (!localHost) {
+      const [[tls]] = await connection.query("SHOW SESSION STATUS LIKE 'Ssl_cipher'");
+      if (!tls?.Value) throw new Error('Remote MySQL connection is not encrypted.');
     }
-
-    const applied = await getAppliedMigrations(connection);
-
-    await validateMigrationState(connection, applied, files);
-
-    for (const file of files) {
-      if (applied.has(file)) {
-        console.log(`Skipping already applied migration: ${file}`);
-        continue;
+    const [[server]] = await connection.query('SELECT DATABASE() AS db, VERSION() AS version');
+    if (server.db !== EXPECTED_DATABASE) throw new Error('Connected to an unexpected database.');
+    const match = /^(\d+)\.(\d+)\.(\d+)/.exec(server.version);
+    if (!match || /mariadb/i.test(server.version) || Number(match[1]) < 8 ||
+        (Number(match[1]) === 8 && Number(match[2]) === 0 && Number(match[3]) < 16)) {
+      throw new Error('Oracle MySQL 8.0.16 or later is required.');
+    }
+    const [[lock]] = await connection.query('SELECT GET_LOCK(?, 30) AS acquired', [LOCK]);
+    if (Number(lock.acquired) !== 1) throw new Error('Could not acquire migration lock.');
+    locked = true;
+    await connection.query(`CREATE TABLE IF NOT EXISTS schema_migrations (
+      migration VARCHAR(255) NOT NULL PRIMARY KEY,
+      sha256 CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+      applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`);
+    const [records] = await connection.query('SELECT migration, sha256 FROM schema_migrations ORDER BY migration');
+    const existing = await getApplicationTables(connection);
+    if (!records.length && existing.size) {
+      throw new Error('Untracked application tables exist. Stop: inspect partial migrations or use a new empty database.');
+    }
+    if (records.length > files.length) throw new Error('Migration files are missing.');
+    for (let i = 0; i < records.length; i++) {
+      if (records[i].migration !== files[i].name || records[i].sha256 !== files[i].sha256) {
+        throw new Error(`Migration history or checksum mismatch: ${records[i].migration}. Never modify an applied migration.`);
       }
-
-      const migrationPath = path.join(__dirname, "migrations", file);
-      const sql = fs.readFileSync(migrationPath, "utf8");
-
-      console.log(`Running migration: ${file}...`);
-
-      // MySQL DDL can auto-commit. A failure may leave partial changes.
-      // The migration is recorded only after the complete SQL succeeds.
-      await connection.query(sql);
-
-      await connection.query(
-        "INSERT INTO schema_migrations (migration) VALUES (?)",
-        [file],
-      );
-
-      console.log(`Migration completed and recorded: ${file}`);
     }
-
-    if (process.argv.includes("--seed")) {
-      await runSeeds(connection);
+    if (records.length && (BASE_TABLES.some(name => !existing.has(name)) || existing.has('role_hierarchy'))) {
+      throw new Error('Baseline tables are missing or the old role hierarchy remains. Inspect schema drift.');
     }
-
-    console.log("All pending migrations executed successfully!");
+    for (const file of files.slice(records.length)) {
+      console.log(`Applying ${file.name}...`);
+      // MySQL DDL implicitly commits. Never mark incomplete SQL as applied.
+      await connection.query(file.sql);
+      await connection.execute('INSERT INTO schema_migrations (migration, sha256) VALUES (?, ?)', [file.name, file.sha256]);
+      console.log(`Applied ${file.name}`);
+    }
+    console.log('PayTeam migrations are up to date. Initial master data is part of migration 001.');
   } catch (error) {
-    console.error("Migration failed:", error.message);
+    if (connection) await connection.rollback().catch(() => {});
+    console.error('Migration stopped:', error.message);
+    console.error('If SQL execution began, inspect the schema before retrying; DDL may have committed.');
     process.exitCode = 1;
   } finally {
     if (connection) {
+      if (locked) await connection.query('SELECT RELEASE_LOCK(?)', [LOCK]).catch(() => {});
       await connection.end();
     }
   }
 }
 
-if (
-  process.argv[1] &&
-  path.resolve(process.argv[1]) === __filename
-) {
-  await runMigrations();
-}
-
-export { runMigrations, runSeeds, getMigrationFiles, orderMigrationNames, MIGRATION_ORDER };
-export default { runMigrations, runSeeds };
+if (process.argv[1] && path.resolve(process.argv[1]) === filename) await runMigrations();
+export { runMigrations };
+export default { runMigrations };
