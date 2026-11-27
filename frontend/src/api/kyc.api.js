@@ -1,8 +1,8 @@
 import api from "./axios";
 
 // Status
-export const getKycStatus = async () => {
-  const response = await api.get("/kyc/status");
+export const getKycStatus = async (signal) => {
+  const response = await api.get("/kyc/status", { signal });
   return response.data;
 };
 

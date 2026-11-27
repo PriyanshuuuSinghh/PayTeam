@@ -7,6 +7,8 @@ import { MetricFreshness } from "./MetricFreshness";
 import { useDashboardMetric } from "../hooks/useDashboardMetric";
 import { fetchBusinessPerformance } from "../services/adminApi";
 
+import { formatMoney } from "../../../components/workspace/format";
+
 const periods = [
   { value: "1h", label: "1h" },
   { value: "24h", label: "24h" },
@@ -22,12 +24,6 @@ const percent = new Intl.NumberFormat("en-IN", {
 const todayInIndia = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Kolkata" });
 const focus = "focus-visible:outline-2 focus-visible:outline-blue-600";
 
-function formatMoney(amount) {
-  const match = /^(-?)(\d+)\.(\d{2})$/.exec(amount ?? "");
-  if (!match) return null;
-  const [, sign, whole, fraction] = match;
-  return `${sign}₹${integer.format(BigInt(whole))}.${fraction}`;
-}
 
 function BusinessMetric({ title, icon: Icon, accent, value, detail, change, freshness, to, status = "Unavailable" }) {
   return (
@@ -147,7 +143,7 @@ export function BusinessPerformance({ refreshVersion = 0, onRefreshComplete }) {
                 freshness={currentResult}
                 to={window ? `/admin/users?customers=signups&from=${window.start}&to=${window.end}` : undefined}
                 detail={signups ? `${integer.format(signups.previous)} signups in the previous period` : undefined} />
-              <BusinessMetric title="Total Wallet Balance" icon={Wallet} accent="bg-emerald-100 text-emerald-800"
+              <BusinessMetric title="Aggregate customer wallet balance" icon={Wallet} accent="bg-emerald-100 text-emerald-800"
                 value={formatMoney(wallet?.amount)} status={status} freshness={currentResult} detail={wallet?.amount === null
                   ? "Some customer wallets are missing."
                   : "Current snapshot. Historical balances unavailable."} />

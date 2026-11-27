@@ -3,7 +3,7 @@ import { Link, useLocation, useParams, useSearchParams } from "react-router-dom"
 import { User, Mail, Phone, Store, MapPin, ShieldCheck, Building, KeyRound } from "lucide-react";
 import { getCurrentUser } from "../../api/auth.api";
 import { fetchBackendUserById } from "../../features/admin/services/adminApi";
-import { getRoleMeta } from "../../constants/roles";
+import { getRoleMeta, isAdminRole } from "../../constants/roles";
 import { useAuth } from "../../context/AuthContext";
 import PasswordUpdateForm from "../../features/auth/components/PasswordUpdateForm";
 import { Button } from "../../components/ui/button";
@@ -49,7 +49,7 @@ export default function UserProfile({ targetUserId }) {
   if (error || !profile) return <div role="alert" className="max-w-4xl mx-auto bg-white rounded-2xl p-6 border border-rose-200 text-sm text-rose-700">{error || "Profile not found."}</div>;
 
   const roleMeta = getRoleMeta(profile) || { name: profile.role_name || "Partner" };
-  const status = String(profile.kyc?.status || "pending").toLowerCase();
+  const status = String(profile.kyc?.status || "Not started").toLowerCase();
   const ownProfile = !id || String(authenticatedUser?.id) === String(profile.id);
   const admin = Number(authenticatedUser?.role_id) === 1;
   const directoryBase = location.pathname.startsWith("/admin/users/")
@@ -89,14 +89,14 @@ export default function UserProfile({ targetUserId }) {
             </div>
             <div>
               <h2 className="text-lg font-bold text-slate-900">{profile.name || "PayTeam User"}</h2>
-              <p className="text-xs text-slate-500 mt-0.5 font-mono">Customer ID: #{profile.id} · {roleMeta.name}</p>
-              <p className="text-xs text-slate-500 mt-1">Account: {profile.status || "active"}</p>
+              <p className="text-xs text-slate-500 mt-0.5 font-mono">{isAdminRole(profile) ? "Account" : "Customer"} ID: #{profile.id} · {roleMeta.name}</p>
+              <p className="text-xs text-slate-500 mt-1">Account: {profile.status || "Unavailable"}</p>
             </div>
           </div>
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-blue-50 border border-blue-200 rounded-xl text-xs font-semibold text-blue-700">
+          {!isAdminRole(profile) && <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-blue-50 border border-blue-200 rounded-xl text-xs font-semibold text-blue-700">
             <ShieldCheck className="w-4 h-4" /> KYC: {status.replaceAll("_", " ")}
             {profile.kyc?.steps_completed !== undefined && <span>· {profile.kyc.steps_completed} steps</span>}
-          </div>
+          </div>}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 text-xs">
@@ -106,10 +106,10 @@ export default function UserProfile({ targetUserId }) {
               <span className="font-semibold text-slate-800 text-sm block">{value || "Not provided"}</span>
             </div>
           ))}
-          <div className="space-y-1">
+          {!isAdminRole(profile) && <div className="space-y-1">
             <span className="text-slate-400 font-medium flex items-center gap-1.5"><Building className="w-3.5 h-3.5" />Business Constitution</span>
             <span className="font-semibold text-slate-800 text-sm block">{profile.kyc?.business_type || "Not provided"}</span>
-          </div>
+          </div>}
         </div>
       </div>
 

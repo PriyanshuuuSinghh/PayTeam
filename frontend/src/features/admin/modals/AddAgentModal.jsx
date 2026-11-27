@@ -1,3 +1,4 @@
+import FormDialog from "../../../components/workspace/FormDialog";
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   UserPlus,
@@ -192,7 +193,7 @@ export function AddAgentModal({
   if (!addAgentModalOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+    <FormDialog title="Create customer" close={handleClose}>
       <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-lg p-6 animate-in fade-in zoom-in-95 max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center pb-3 border-b border-slate-100">
           <div>
@@ -482,7 +483,7 @@ export function AddAgentModal({
           </form>
         )}
       </div>
-    </div>
+    </FormDialog>
   );
 }
 
