@@ -593,7 +593,7 @@ test("health and auth endpoints respond with the documented authorization and sa
     assert.equal(body.data.name, "Example User");
     assert.equal(JSON.stringify(body).includes("password_hash"), false);
     const healthPath = `${base}/api/admin/platform-health`;
-    const headers = { authorization: `Bearer ${loginBody.data.accessToken}` };
+    const headers = { authorization: `Bearer ${verifiedBody.data.accessToken}` };
     assert.equal((await fetch(healthPath)).status, 401);
     authModel.isAdmin = async () => false;
     assert.equal((await fetch(healthPath, { headers })).status, 403);
