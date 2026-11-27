@@ -2,6 +2,8 @@
 
 PayTeam's Node.js/Express API uses MySQL for account/KYC records and Redis for OTP challenges and rate limits. DigiLocker, PAN, and bank verification adapters use the existing IDTO integration. KYC media is stored through Cloudinary. AquaPay-specific source contracts remain reference material and require PayTeam approval before customer use.
 
+The Aadhaar, PAN, bank, DigiLocker, and media HTTP routes are intentionally not mounted until PayTeam approves customer disclosures, provider permissions, and media retention rules. Their modules remain available for audit and tests. The agreement endpoints fail closed until approved PayTeam terms are configured.
+
 ## Configuration
 
 Copy `.env.example` to `.env` and provide PayTeam-only values. `src/config/env.js` loads this file from the backend directory regardless of the shell's current directory. Required startup settings include application name/environment/port, a `payteam_*` database, Redis host/port and `payteam:` key prefix, JWT secret, KYC OTP secret, and versioned KYC encryption keys. Production additionally requires authenticated Redis, HTTPS frontend origins, Cloudinary credentials, and IDTO provider configuration.

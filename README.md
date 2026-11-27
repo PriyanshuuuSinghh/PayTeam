@@ -21,7 +21,7 @@ PayTeam is an independent B2C customer onboarding and KYC foundation. AquaPay is
 
 The checked-in environment examples contain placeholders only. The local PayTeam `.env` intentionally has blank secret fields; supply unique development keys before starting the API. Production deployments require separate credentials and keys. The previous local AquaPay environment was preserved in the ignored `backend/.env.aquapay.local` file and is not used by PayTeam.
 
-The Aadhaar, PAN, KYC media, and agreement screens are blocked until PayTeam approves customer consent and disclosure text. Do not enable customer onboarding until those product/legal decisions and provider credentials are complete.
+The Aadhaar, PAN, bank, KYC media, and agreement screens are blocked until PayTeam approves customer consent and disclosure text. Their provider/media HTTP routes are also unmounted. Do not enable customer onboarding until those product/legal decisions and provider credentials are complete.
 
 ## Checks
 

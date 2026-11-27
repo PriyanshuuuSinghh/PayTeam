@@ -100,7 +100,7 @@ test("PAN-specific mock provider is local-only and returns a non-production mark
   );
 });
 
-test("mounted PAN verification endpoint rejects an unauthenticated request", async () => {
+test("PAN verification endpoint stays unavailable until PayTeam consent is approved", async () => {
   const server = app.listen(0);
   try {
     await new Promise((resolve) => server.once("listening", resolve));
@@ -110,8 +110,8 @@ test("mounted PAN verification endpoint rejects an unauthenticated request", asy
       body: JSON.stringify({ panNumber: "ABCDE1234F", consent: true }),
     });
     const body = await response.json();
-    assert.equal(response.status, 401);
-    assert.equal(body.code, "UNAUTHORIZED");
+    assert.equal(response.status, 404);
+    assert.match(body.message, /Route not found/);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
