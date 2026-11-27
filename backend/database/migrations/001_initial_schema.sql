@@ -53,7 +53,7 @@ CREATE TABLE users (
   last_login_at DATETIME(3) DEFAULT NULL,
   company_id BIGINT UNSIGNED DEFAULT NULL,
   role_id TINYINT UNSIGNED NOT NULL,
-  scheme_id BIGINT UNSIGNED NOT NULL,
+  scheme_id BIGINT UNSIGNED DEFAULT NULL,
   parent_id BIGINT UNSIGNED DEFAULT NULL,
   shopname VARCHAR(150) DEFAULT NULL,
   address VARCHAR(255) DEFAULT NULL,
@@ -89,23 +89,44 @@ CREATE TABLE users (
   KEY idx_users_created_id (created_at DESC, id DESC),
   CONSTRAINT fk_users_scheme
     FOREIGN KEY (scheme_id) REFERENCES schemes(id),
-  CONSTRAINT chk_users_name CHECK (CHAR_LENGTH(TRIM(name)) > 0),
-  CONSTRAINT chk_users_latitude CHECK (latitude BETWEEN -90 AND 90),
-  CONSTRAINT chk_users_longitude CHECK (longitude BETWEEN -180 AND 180),
-  CONSTRAINT chk_users_passwordchanged CHECK (is_passwordchanged IN (0, 1)),
+
+  CONSTRAINT chk_users_name
+    CHECK (CHAR_LENGTH(TRIM(name)) > 0),
+
+  CONSTRAINT chk_users_latitude
+    CHECK (latitude BETWEEN -90 AND 90),
+
+  CONSTRAINT chk_users_longitude
+    CHECK (longitude BETWEEN -180 AND 180),
+
+  CONSTRAINT chk_users_passwordchanged
+    CHECK (is_passwordchanged IN (0, 1)),
+
   CONSTRAINT chk_users_customer_contacts CHECK (
-    role_id <> 2 OR (email_verified_at IS NOT NULL AND mobile_verified_at IS NOT NULL)
+    role_id <> 2 OR (
+      email_verified_at IS NOT NULL
+      AND mobile_verified_at IS NOT NULL
+    )
   ),
+
+  CONSTRAINT chk_users_role_scheme CHECK (
+    (role_id = 1 AND scheme_id IS NULL)
+    OR
+    (role_id = 2 AND scheme_id IS NOT NULL)
+  ),
+
   CONSTRAINT fk_users_company
     FOREIGN KEY (company_id) REFERENCES companies(id),
+
   CONSTRAINT fk_users_role
     FOREIGN KEY (role_id) REFERENCES roles(id),
+
   CONSTRAINT fk_users_parent
     FOREIGN KEY (parent_id) REFERENCES users(id)
+
 ) ENGINE=InnoDB
   DEFAULT CHARSET=utf8mb4
   COLLATE=utf8mb4_0900_ai_ci;
-
 CREATE TABLE user_wallets (
   user_id BIGINT UNSIGNED NOT NULL,
   mainbalance DECIMAL(18,2) NOT NULL DEFAULT 0.00,
