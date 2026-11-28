@@ -151,13 +151,13 @@ export const LoginPage = () => {
 
   return <AuthShell mode="login">
     {successRoute && !challenge ? <AuthSuccess title="You're signed in" description="Opening your PayTeam account…" /> : <>
-      <AuthHeading title="Welcome back" description="Sign in to manage your payments, transfers and everyday services." />
+      <AuthHeading title="Welcome back" description="Sign in to your PayTeam account." />
       <form className="pt-form" onSubmit={handleSubmit(onSubmit)} noValidate>
         {!challenge && <ErrorAlert error={apiError} onDismiss={() => setApiError(null)} />}
         <AuthField id="login-email" label="Email or mobile number" icon={Mail} registration={register("email")} error={errors.email?.message} autoComplete="username" placeholder="Enter your email or mobile" disabled={isLoading || Boolean(challenge)} />
         <AuthField id="login-password" label="Password" icon={LockKeyhole} registration={register("password")} error={errors.password?.message} type="password" autoComplete="current-password" placeholder="Enter your password" disabled={isLoading || Boolean(challenge)} />
         <div className="pt-row"><span><ShieldCheck size={14} style={{display:"inline",marginRight:5}} /> Secure sign-in</span><Link className="pt-link" to="/forgot-password">Forgot password?</Link></div>
-        <AuthButton id="login-submit-button" busy={isLoading} disabled={Boolean(challenge)}>{isLoading ? "Signing in…" : "Continue"}</AuthButton>
+        <AuthButton id="login-submit-button" busy={isLoading} disabled={Boolean(challenge)}>{isLoading ? "Signing in…" : "Sign in"}</AuthButton>
       </form>
       <p className="pt-switch">New to PayTeam? <Link to="/register" className="pt-link">Create an account</Link></p>
     </>}

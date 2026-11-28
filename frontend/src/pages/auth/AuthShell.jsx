@@ -1,31 +1,31 @@
 import React, { useId, useState } from "react";
-import { ArrowRight, ArrowLeftRight, Check, Eye, EyeOff, FileText, LayoutGrid, Smartphone, SatelliteDish, Zap, Droplet, Wifi, ShieldCheck, Pause, Play } from "lucide-react";
+import { ArrowRight, Check, Eye, EyeOff, LockKeyhole, ShieldCheck, Wallet, Zap, ChartNoAxesCombined, Pause, Play } from "lucide-react";
 import "./authExperience.css";
 
-const services = [
-  { name: "BBPS", Icon: LayoutGrid, tone: "cyan" },
-  { name: "Bill payments", Icon: FileText, tone: "violet" },
-  { name: "Mobile recharge", Icon: Smartphone, tone: "ice" },
-  { name: "DTH", Icon: SatelliteDish, tone: "violet" },
-  { name: "Electricity", Icon: Zap, tone: "gold" },
-  { name: "Water", Icon: Droplet, tone: "cyan" },
-  { name: "Transfers", Icon: ArrowLeftRight, tone: "mint" },
-  { name: "Broadband", Icon: Wifi, tone: "ice" },
-];
+function Brand({ mobile = false }) {
+  return <div className={"pt-brand" + (mobile ? " pt-mobile-brand" : "")}>
+    <span className="pt-brand-rim"><img src="/payteam-mark.svg" alt=""/></span>
+    <span><strong>PayTeam</strong><small>Payments for everyday life</small></span>
+  </div>;
+}
 
-// Vector artwork is scoped to authentication; no external image requests.
-function PayTeamMark({ className }) {
+// Decorative vector/CSS artwork, not a balance or transaction chart.
+function WalletArtwork() {
+  return <div className="pt-art" aria-hidden="true">
+    <div className="pt-orbit pt-orbit-back"/>
+    <div className="pt-art-float"><div className="pt-wallet-back"/><div className="pt-wallet-front"><Wallet size={86} strokeWidth={1.45}/></div></div>
+    <div className="pt-orbit pt-orbit-front"/>
+    <i className="pt-orb pt-orb-top"/><i className="pt-orb pt-orb-small"/>
+  </div>;
+}
+
+function InsightArtwork() {
   const id = useId();
-  return <svg className={className} viewBox="0 0 180 244" fill="none" aria-hidden="true">
-    <defs>
-      <linearGradient id={`${id}-a`} x1="18" y1="4" x2="167" y2="229" gradientUnits="userSpaceOnUse"><stop stopColor="#b5f5ff"/><stop offset=".32" stopColor="#37a8ff"/><stop offset=".67" stopColor="#174bf1"/><stop offset="1" stopColor="#06259d"/></linearGradient>
-      <linearGradient id={`${id}-b`} x1="151" y1="22" x2="28" y2="230" gradientUnits="userSpaceOnUse"><stop stopColor="#b3f3ff"/><stop offset=".45" stopColor="#2184ff"/><stop offset="1" stopColor="#0b36ca"/></linearGradient>
-      <linearGradient id={`${id}-c`} x1="25" y1="120" x2="130" y2="236" gradientUnits="userSpaceOnUse"><stop stopColor="#1539de"/><stop offset="1" stopColor="#52c8ff"/></linearGradient>
-    </defs>
-    <path d="M85 9Q90 1 95 9L172 135Q178 145 170 155L98 234Q90 243 82 234L10 155Q2 145 8 135Z" fill={`url(#${id}-a)`} stroke="#b1f1ff" strokeWidth="1.6"/>
-    <path d="M90 5L77 126Q75 139 89 146L124 166Q135 174 128 187L98 234L170 155Q178 145 172 135L95 9Z" fill={`url(#${id}-b)`} stroke="#8fddff" strokeOpacity=".72"/>
-    <path d="M8 142L77 126Q75 139 89 146L124 166Q135 174 128 187L91 239L10 155Z" fill={`url(#${id}-c)`} fillOpacity=".82"/>
-    <path d="M90 7L77 126Q75 139 89 146L124 166Q135 174 128 187L91 237" stroke="#91e7ff" strokeOpacity=".65" strokeWidth="1.5"/>
+  return <svg className="pt-insight-art" viewBox="0 0 320 120" preserveAspectRatio="none" aria-hidden="true">
+    <defs><linearGradient id={id} x1="0" y1="0" x2="0" y2="1"><stop stopColor="#1689fa" stopOpacity=".74"/><stop offset="1" stopColor="#a0d9ff" stopOpacity=".05"/></linearGradient></defs>
+    <path d="M0 111 C34 111 49 103 71 87 S108 105 132 90 S166 45 190 51 S230 79 250 53 S283 8 320 29 V120 H0Z" fill={`url(#${id})`}/>
+    <path className="pt-insight-line" pathLength="1" d="M0 111 C34 111 49 103 71 87 S108 105 132 90 S166 45 190 51 S230 79 250 53 S283 8 320 29" fill="none" stroke="#fff" strokeWidth="1.6" vectorEffect="non-scaling-stroke"/>
+    <circle cx="190" cy="51" r="5" fill="white" className="pt-insight-point"/>
   </svg>;
 }
 
@@ -34,21 +34,22 @@ export function AuthShell({ mode, children }) {
   return <main className={`pt-auth ${paused ? "pt-paused" : ""}`}>
     <div className="pt-shell">
       <section className="pt-visual" aria-label="About PayTeam">
-        <div className="pt-ambient" aria-hidden="true"><i/><i/><i/></div>
-        <div className="pt-brand pt-brand-light"><PayTeamMark className="pt-brand-mark"/>PayTeam</div>
-        <div className="pt-copy"><h2>Payments made<br/><em>effortless.</em></h2><p>One place for bills, transfers and everyday payment services.</p></div>
-        <div className="pt-scene" aria-label="Payment service categories">
-          <div className="pt-orbit pt-orbit-one" aria-hidden="true"/><div className="pt-orbit pt-orbit-two" aria-hidden="true"/>
-          <div className="pt-pedestal" aria-hidden="true"><i/><i/></div>
-          <div className="pt-core"><PayTeamMark className="pt-core-mark"/></div>
-          {services.map(({ name, Icon, tone }, index) => <div className={`pt-service pt-service-${index} pt-tone-${tone}`} key={name}><Icon size={24} strokeWidth={1.8} aria-hidden="true"/><span>{name}</span></div>)}
+        <Brand/>
+        <div className="pt-hero">
+          <div className="pt-copy"><h2>A smarter way to<br/>pay, recharge and manage</h2><p>Your account, everyday payments and transaction insights — all in one place.</p></div>
+          <WalletArtwork/>
         </div>
-        <div className="pt-visual-bottom"><span>Services subject to availability and eligibility.</span><button type="button" onClick={() => setPaused(v => !v)} aria-label={paused ? "Resume decorative animation" : "Pause decorative animation"} title={paused ? "Resume animation" : "Pause animation"}>{paused ? <Play size={15}/> : <Pause size={15}/>}</button></div>
+        <div className="pt-benefits">
+          <article className="pt-benefit"><span className="pt-benefit-icon"><ShieldCheck size={39} strokeWidth={1.8}/></span><div><h3>Secure sign-in</h3><p>Password and verification code protect access to your account.</p></div></article>
+          <article className="pt-benefit"><span className="pt-benefit-icon pt-violet"><Zap size={39} strokeWidth={1.8}/></span><div><h3>Recharge &amp; BBPS</h3><p>Mobile, DTH and bill payments, subject to service availability.</p></div></article>
+          <article className="pt-benefit pt-benefit-wide"><InsightArtwork/><span className="pt-benefit-icon"><ChartNoAxesCombined size={39} strokeWidth={1.8}/></span><div><h3>Wallet &amp; transaction insights</h3><p>Manage your wallet and track payments when available.</p></div></article>
+        </div>
+        <div className="pt-visual-bottom"><span>Payment services require KYC approval and eligibility.</span><button type="button" onClick={() => setPaused(v => !v)} aria-label={paused ? "Resume decorative animation" : "Pause decorative animation"} title={paused ? "Resume animation" : "Pause animation"}>{paused ? <Play size={15}/> : <Pause size={15}/>}</button></div>
       </section>
       <section className={`pt-form-side ${mode === "register" ? "pt-register" : ""}`}>
-        <div className="pt-mobile-brand pt-brand"><PayTeamMark className="pt-brand-mark"/>PayTeam</div>
+        <Brand mobile/>
         <div className="pt-form-content">{children}</div>
-        <footer className="pt-footer"><span>© {new Date().getFullYear()} PayTeam</span><span><ShieldCheck size={15}/> Account security</span></footer>
+        <footer className="pt-footer"><span>© {new Date().getFullYear()} PayTeam</span><span><LockKeyhole size={14}/> Account security</span></footer>
       </section>
     </div>
   </main>;
