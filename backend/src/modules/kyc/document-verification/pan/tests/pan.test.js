@@ -100,18 +100,25 @@ test("PAN-specific mock provider is local-only and returns a non-production mark
   );
 });
 
-test("PAN verification endpoint is mounted and requires authentication", async () => {
+test("PAN verification endpoint is unavailable when live KYC is disabled", async () => {
   const server = app.listen(0);
+
   try {
     await new Promise((resolve) => server.once("listening", resolve));
-    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/kyc/pan/verify`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ panNumber: "ABCDE1234F", consent: true }),
-    });
-    const body = await response.json();
-    assert.equal(response.status, 401);
-    assert.equal(body.code, "UNAUTHORIZED");
+
+    const response = await fetch(
+      `http://127.0.0.1:${server.address().port}/api/kyc/pan/verify`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          panNumber: "ABCDE1234F",
+          consent: true,
+        }),
+      }
+    );
+
+    assert.equal(response.status, 404);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

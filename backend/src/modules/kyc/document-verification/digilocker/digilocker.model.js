@@ -1,10 +1,13 @@
 import crypto from "node:crypto";
 import pool from "../../../../config/db.js";
+import { DEVELOPMENT_AGREEMENT_CODE } from "../../liveKycConfig.js";
 import { getDigiLockerSignaturePolicy } from "./digilocker.signatureConfig.js";
 
 const PROVIDER_NAME = "idto_digilocker_v1";
 const DEVELOPMENT_UNVERIFIED_PROVIDER_NAME = "idto_digilocker_v1_dev_unverified";
+const AADHAAR_PROVIDER_TRUST_NAME = "idto_digilocker_v1_provider_trust";
 const DEVELOPMENT_ONLY_PROVIDER_NAMES = Object.freeze([
+  AADHAAR_PROVIDER_TRUST_NAME,
   DEVELOPMENT_UNVERIFIED_PROVIDER_NAME,
   "idto_pan_detailed_v2_mock",
 ]);
@@ -250,12 +253,19 @@ function createDigilockerModel({ dbPool = pool, env = process.env } = {}) {
     verifiedName,
     persistIdentity,
     signatureVerified,
+    aadhaarTrustMode,
   }) {
     const config = VERIFICATION_STEPS[verificationType];
     if (!config) throw new Error("UNSUPPORTED_KYC_VERIFICATION_TYPE");
     if (verificationType === "pan" && typeof signatureVerified !== "boolean") throw new Error("INVALID_SIGNATURE_VERIFICATION_RESULT");
     if (typeof persistIdentity !== "function") throw new Error("INVALID_IDENTITY_DATA");
     let providerName = PROVIDER_NAME;
+    if (aadhaarTrustMode === "idto_provider") {
+      if (verificationType !== "aadhaar" || env.APP_ENV !== "development" || env.NODE_ENV === "production" || env.IDTO_PROVIDER_MODE !== "idto" || env.PAYTEAM_LIVE_KYC_ENABLED !== "true" || env.PAYTEAM_AADHAAR_TRUST_MODE?.trim() !== "idto_provider") {
+        throw new Error("AADHAAR_PROVIDER_TRUST_NOT_ALLOWED");
+      }
+      providerName = AADHAAR_PROVIDER_TRUST_NAME;
+    }
     if (verificationType === "pan" && !signatureVerified) {
       const signaturePolicy = getDigiLockerSignaturePolicy(env);
       if (!signaturePolicy.developmentOnly) throw new Error("SIGNATURE_VERIFICATION_REQUIRED");
@@ -576,15 +586,23 @@ function createDigilockerModel({ dbPool = pool, env = process.env } = {}) {
   }
 
   async function assertNoDevelopmentUnverifiedRecords() {
-    if (env.APP_ENV !== "production") return true;
+    if ((env.APP_ENV?.trim() || env.NODE_ENV?.trim()) !== "production") return true;
     const [rows] = await dbPool.execute(
       `SELECT COUNT(*) AS development_unverified_count
          FROM kyc_verifications
-        WHERE provider IN (?, ?)`,
+        WHERE provider IN (${DEVELOPMENT_ONLY_PROVIDER_NAMES.map(() => "?").join(", ")})`,
       DEVELOPMENT_ONLY_PROVIDER_NAMES,
     );
     if (Number(rows[0]?.development_unverified_count || 0) > 0) {
       throw new Error("Production startup blocked because development-only unverified KYC records exist");
+    }
+    const [testAgreements] = await dbPool.execute(
+      `SELECT COUNT(*) AS development_agreement_count
+         FROM agreement_acceptances WHERE agreement_code = ?`,
+      [DEVELOPMENT_AGREEMENT_CODE],
+    );
+    if (Number(testAgreements[0]?.development_agreement_count || 0) > 0) {
+      throw new Error("Production startup blocked because development KYC acknowledgements exist");
     }
     return true;
   }

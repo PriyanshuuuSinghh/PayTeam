@@ -1,105 +1,25 @@
 import { useState } from "react";
-import { CheckCircle2, ExternalLink, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
+import { ShieldCheck, ArrowUpRight, RefreshCw } from "lucide-react";
+import { KycDisclosure, KycUnavailable } from "./KycDisclosure";
 
-export function Step2AadhaarAuth({
-  onTriggerOtp,
-  isInitiating,
-  digilockerSessionActive,
-  onCheckStatus,
-  isCheckingStatus,
-  aadhaarVerified,
-  verifiedData,
-  sessionStatus,
-  errorMessage,
-  onResetSession,
-}) {
-  const [consentAccepted, setConsentAccepted] = useState(false);
-
-  if (aadhaarVerified) {
-    return (
-      <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-5" role="status">
-        <div className="flex items-start gap-3">
-          <CheckCircle2 className="mt-0.5 h-6 w-6 text-emerald-600" aria-hidden="true" />
-          <div>
-            <h3 className="font-semibold text-emerald-950">Aadhaar verified</h3>
-            <p className="mt-1 text-sm text-emerald-800">
-              {verifiedData?.verifiedName || "Verified identity"}
-              {verifiedData?.maskedIdentifier && verifiedData.maskedIdentifier !== "—"
-                ? ` · ${verifiedData.maskedIdentifier}`
-                : ""}
-            </p>
-          </div>
-        </div>
-      </section>
-    );
-  }
-
+export function Step2AadhaarAuth({ enabled, disclosure, onTriggerOtp, isInitiating, authorizationUrl, digilockerSessionActive, onCheckStatus, isCheckingStatus, aadhaarVerified, verifiedData, sessionStatus, errorMessage }) {
+  const [consent, setConsent] = useState(false);
+  if (!enabled && !aadhaarVerified) return <KycUnavailable title="Aadhaar verification"/>;
+  const active = digilockerSessionActive && !["failed", "expired"].includes(sessionStatus);
   return (
-    <section className="space-y-5" aria-live="polite">
-      <div className="rounded-xl border border-blue-200 bg-blue-50 p-5">
-        <div className="flex items-start gap-3">
-          <ShieldCheck className="mt-0.5 h-6 w-6 text-blue-700" aria-hidden="true" />
-          <div>
-            <h3 className="font-semibold text-slate-950">Verify with DigiLocker</h3>
-            <p className="mt-1 text-sm leading-6 text-slate-600">
-              Continue to the IDTO-hosted DigiLocker flow. PayTeam receives the verified result through its secure callback; do not share an OTP with PayTeam staff.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {!digilockerSessionActive ? (
-        <>
-          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 p-4 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              className="mt-1 h-4 w-4"
-              checked={consentAccepted}
-              onChange={(event) => setConsentAccepted(event.target.checked)}
-            />
-            <span>I consent to DigiLocker identity verification for this KYC application.</span>
-          </label>
-          <button
-            type="button"
-            onClick={onTriggerOtp}
-            disabled={!consentAccepted || isInitiating}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isInitiating ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
-            {isInitiating ? "Starting verification…" : "Continue to DigiLocker"}
-          </button>
-        </>
-      ) : (
-        <div className="space-y-3 rounded-xl border border-slate-200 p-5">
-          <p className="text-sm text-slate-700">
-            Verification is {sessionStatus === "processing" ? "being processed" : "awaiting completion"}. Complete the provider flow, then check the authoritative status.
-          </p>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <button
-              type="button"
-              onClick={onCheckStatus}
-              disabled={isCheckingStatus}
-              className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 font-semibold text-white disabled:opacity-50"
-            >
-              <RefreshCw className={`h-4 w-4 ${isCheckingStatus ? "animate-spin" : ""}`} />
-              Check verification status
-            </button>
-            {(["failed", "expired"].includes(sessionStatus)) && (
-              <button type="button" onClick={onResetSession} className="rounded-lg border border-slate-300 px-4 py-2.5 font-semibold text-slate-700">
-                Start again
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {errorMessage && (
-        <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">
-          {errorMessage}
-        </p>
-      )}
+    <section className="pk-verification" aria-live="polite">
+      <span className="pk-verification-icon"><ShieldCheck aria-hidden="true"/></span>
+      <h3>{aadhaarVerified ? "Aadhaar verified" : "Verify your Aadhaar"}</h3>
+      <p>{aadhaarVerified ? verifiedData?.maskedIdentifier || "Verification confirmed by PayTeam." : "Complete authorization on the DigiLocker portal. Enter your Aadhaar details only on the authorized portal. Never share your OTP with PayTeam staff."}</p>
+      {!aadhaarVerified && <>
+        <KycDisclosure text={disclosure} checked={consent} onChange={setConsent} disabled={isInitiating || active}/>
+        {!active && <button type="button" className="pk-primary" disabled={!consent || isInitiating} onClick={onTriggerOtp}>{isInitiating ? "Connecting…" : "Start DigiLocker verification"}<ArrowUpRight size={17}/></button>}
+        {active && <p>Complete the provider flow, then check the verification status.</p>}
+        {authorizationUrl && active && <a className="pk-primary" href={authorizationUrl} target="_blank" rel="noopener noreferrer">Open DigiLocker <ArrowUpRight size={18}/></a>}
+        {active && <button type="button" className="pk-secondary" disabled={isCheckingStatus || isInitiating} onClick={onCheckStatus}><RefreshCw size={16}/>{isCheckingStatus ? "Checking…" : "Check verification status"}</button>}
+      </>}
+      {errorMessage && <p className="pk-error" role="alert">{errorMessage}</p>}
     </section>
   );
 }
-
 export default Step2AadhaarAuth;

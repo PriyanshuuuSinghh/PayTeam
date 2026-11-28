@@ -1,12 +1,8 @@
-import React from "react";
 import KycVerificationPage from "../kyc/KycVerificationPage";
+import "../../features/kyc/kycGlass.css";
 
-/**
- * UserKyc Page
- * Provides full RBI-compliant KYC verification for all Normal Users.
- */
 export function UserKyc() {
-  return <KycVerificationPage />;
+  return <div className="pk-kyc"><KycVerificationPage /></div>;
 }
 
 export default UserKyc;

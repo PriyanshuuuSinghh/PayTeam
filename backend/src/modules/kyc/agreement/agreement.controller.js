@@ -22,7 +22,7 @@ const getAgreementDetails = asyncHandler(async (req, res) => {
     new ApiResponse(
       httpStatus.OK,
       data,
-      "Agent agreement details retrieved successfully",
+      "Customer agreement details retrieved successfully",
     ),
   );
 });
@@ -48,7 +48,7 @@ const acceptAgreement = asyncHandler(async (req, res) => {
     new ApiResponse(
       httpStatus.OK,
       data,
-      "Agent agreement accepted successfully",
+      "Customer agreement accepted successfully",
     ),
   );
 });

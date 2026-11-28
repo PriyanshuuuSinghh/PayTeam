@@ -23,10 +23,10 @@ export const verifyBasicDetailsOtp = async (otp) => {
 };
 
 // Step 2 & 3: Aadhaar / PAN Verification
-export const initiateAadhaarVerification = async (consent = true) => {
+export const initiateAadhaarVerification = async (consent = true, consentVersion) => {
   const response = await api.post("/kyc/digilocker/aadhaar/initiate", {
     consent,
-  });
+  }, { headers: { "X-KYC-Consent-Version": consentVersion } });
   return response.data;
 };
 
@@ -36,11 +36,11 @@ export const getAadhaarVerificationStatus = async (sessionId) => {
   return response.data;
 };
 
-export const verifyPanDetails = async ({ panNumber, consent = true }) => {
+export const verifyPanDetails = async ({ panNumber, consent = true, consentVersion }) => {
   const response = await api.post(
     "/kyc/pan/verify",
     { panNumber, consent },
-    { timeout: 180000 }
+    { timeout: 180000, headers: { "X-KYC-Consent-Version": consentVersion } }
   );
   return response.data;
 };
@@ -55,8 +55,8 @@ export const initiatePanVerification = async (consent = true) => {
 };
 
 // Step 4: Bank Details
-export const saveBankDetails = async (bankData) => {
-  const response = await api.put("/kyc/bank-details", bankData);
+export const saveBankDetails = async (bankData, consentVersion) => {
+  const response = await api.put("/kyc/bank-details", bankData, { headers: { "X-KYC-Consent-Version": consentVersion } });
   return response.data;
 };
 
@@ -73,7 +73,7 @@ export const restartRejectedKyc = async () => {
 
 // Step 5: Media Uploads
 
-export const uploadKycMedia = async (file, assetType) => {
+export const uploadKycMedia = async (file, assetType, consentVersion) => {
   const formData = new FormData();
 
   formData.append("file", file);
@@ -82,6 +82,7 @@ export const uploadKycMedia = async (file, assetType) => {
   const response = await api.post("/kyc/media/upload", formData, {
     headers: {
       "Content-Type": "multipart/form-data",
+      "X-KYC-Consent-Version": consentVersion,
     },
     timeout: 180000,
   });

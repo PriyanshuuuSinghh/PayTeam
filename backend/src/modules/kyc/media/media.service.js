@@ -269,7 +269,7 @@ function uploadToCloudinary(file, rules, caseId) {
           {
             resource_type: rules.resourceType,
             type: "authenticated",
-            folder: `aquapay/kyc/${caseId}`,
+            folder: `payteam/kyc/${caseId}`,
             public_id: crypto.randomUUID(),
             overwrite: false,
             use_filename: false,

@@ -1,3 +1,5 @@
+import { getLiveKycConfig } from "../liveKycConfig.js";
+import agreementModel from "../agreement/agreement.model.js";
 import submissionModel from "./submission.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import httpStatus from "../../../utils/httpStatus.js";
@@ -227,6 +229,14 @@ async function submitKycApplication(userId, { notes } = {}) {
         incompleteDetails,
         "INCOMPLETE_KYC_STEPS",
       );
+    }
+
+    const liveConfig = getLiveKycConfig();
+    if (liveConfig) {
+      const approved = liveConfig.agreement;
+      if (!approved || !(await agreementModel.findAgreementAcceptance(connection, kycCase.id, approved.code, approved.version))) {
+        throw new ApiError(409, "Accept the current approved PayTeam agreement before submission", [], "AGREEMENT_VERSION_MISMATCH");
+      }
     }
 
     const submittedAt = new Date();

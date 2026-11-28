@@ -1,24 +1,45 @@
 import { Router } from "express";
-
+import { requireAuth } from "../../middlewares/auth.middleware.js";
+import authModel from "../auth/auth.model.js";
+import ApiError from "../../utils/ApiError.js";
 import basicDetailsRoutes from "./basic-details/basicDetails.routes.js";
 import statusRoutes from "./status/status.routes.js";
-import digilockerRoutes from "./document-verification/digilocker/digilocker.routes.js";
-import aadhaarRoutes from "./document-verification/aadhaar/aadhaar.routes.js";
-import panRoutes from "./document-verification/pan/pan.routes.js";
 import agreementRoutes from "./agreement/agreement.routes.js";
 import submissionRoutes from "./submission/submission.routes.js";
+import { getLiveKycConfig } from "./liveKycConfig.js";
 
 const router = Router();
-
+const config = getLiveKycConfig();
 router.use(basicDetailsRoutes);
 router.use(statusRoutes);
-router.use(digilockerRoutes);
-router.use(aadhaarRoutes);
-router.use(panRoutes);
-// Bank and media APIs remain outside the PayTeam HTTP surface until their
-// separate provider, disclosure, and retention requirements are approved.
+router.get("/capabilities", requireAuth, (req, res) => {
+  res.set("Cache-Control", "no-store").json({ success: true, data: {
+    aadhaar: Boolean(config?.aadhaar), pan: Boolean(config?.pan), bank: Boolean(config?.bank), media: Boolean(config?.media), agreement: Boolean(config?.agreement),
+    consentVersion: config?.version || null, disclosures: config?.disclosures || null, mediaRetention: config?.mediaRetention || null, videoConsentScript: config?.videoConsentScript || null,
+  } });
+});
+
+if (config) {
+  // Callback remains outside bearer authentication; single-use state binds the session.
+  router.use(["/digilocker/aadhaar", "/pan", "/bank-details", "/media"], requireAuth, async (req, res, next) => {
+    try {
+      if (await authModel.isAdmin(req.user.id)) return next(new ApiError(403, "Customer account required", [], "FORBIDDEN"));
+      if (req.method !== "GET" && req.originalUrl.split("?")[0] !== "/api/kyc/media/restart" && req.get("X-KYC-Consent-Version") !== config.version) {
+        return next(new ApiError(400, "Review and accept the current KYC disclosure before proceeding", [], "CONSENT_REQUIRED"));
+      }
+      return next();
+    } catch { return next(new ApiError(503, "KYC authorization unavailable", [], "SERVICE_UNAVAILABLE")); }
+  });
+  if (config.aadhaar) {
+    // Import Aadhaar first so its handler is registered before the callback is exposed.
+    router.use((await import("./document-verification/aadhaar/aadhaar.routes.js")).default);
+    router.use((await import("./document-verification/digilocker/digilocker.routes.js")).default);
+  }
+  if (config.pan) router.use((await import("./document-verification/pan/pan.routes.js")).default);
+  if (config.bank) router.use((await import("./bank-details/bankDetails.routes.js")).default);
+  if (config.media) router.use((await import("./media/media.routes.js")).default);
+}
 router.use(agreementRoutes);
 router.use(submissionRoutes);
-
 export { router };
 export default router;

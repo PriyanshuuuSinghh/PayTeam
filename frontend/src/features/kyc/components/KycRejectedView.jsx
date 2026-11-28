@@ -10,7 +10,6 @@ import {
   Send,
   ShieldCheck,
 } from "lucide-react";
-import KycHeader from "./KycHeader";
 
 /**
  * Merchant-only rejection screen. Backend status is authoritative: no local
@@ -28,7 +27,6 @@ export function KycRejectedView({
 
   return (
     <div className="min-h-screen bg-[#f8fafc] text-slate-800 font-sans">
-      <KycHeader onLogout={onLogout} />
       <main className="max-w-3xl mx-auto px-4 py-8 sm:py-12 space-y-6">
         <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
           <div className="px-6 sm:px-8 pt-7 pb-6 border-b border-slate-100">

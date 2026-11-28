@@ -6,6 +6,8 @@ import { validateMediaUpload } from "./media.validator.js";
 
 const router = Router();
 
+router.get("/media/status", requireAuth, controller.getMediaStatus);
+
 router.post(
   "/media/upload",
   requireAuth,

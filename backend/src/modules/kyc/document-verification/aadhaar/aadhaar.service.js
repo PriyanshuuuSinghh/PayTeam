@@ -2,11 +2,27 @@ import digilockerService from "../digilocker/digilocker.service.js";
 import digilockerModel from "../digilocker/digilocker.model.js";
 import aadhaarIdentityModel from "./aadhaar.model.js";
 import { validateAadhaarXml } from "./aadhaar.validator.js";
+import { verifyDigiLockerXmlSignature } from "../digilocker/digilocker.signature.js";
+import { getLiveKycConfig } from "../../liveKycConfig.js";
+
+function validateRuntimeAadhaar(xml, options) {
+  const config = getLiveKycConfig();
+  // Original AquaPay trust boundary: authorized IDTO response, strict XML parser,
+  // no claim of independent XML signature verification. Explicit development opt-in only.
+  if (!config || config.aadhaarTrustMode === "idto_provider") return validateAadhaarXml(xml, options);
+  const signed = verifyDigiLockerXmlSignature(xml, {
+    certificateEnvironmentKey: "IDTO_AADHAAR_XML_TRUSTED_CERT_PATH",
+    invalidDocumentCode: "INVALID_AADHAAR_DOCUMENT",
+    onValidationDiagnostic: options?.onValidationDiagnostic,
+  });
+  if (signed.signatureVerified !== true || signed.developmentOnly) throw new Error("INVALID_DOCUMENT_SIGNATURE");
+  return validateAadhaarXml(signed.xml, options);
+}
 
 const AADHAAR_HANDLER = Object.freeze({
   documentCode: "ADHAR",
   issuerId: "in.gov.uidai",
-  consentPurpose: "To complete AquaPay KYC using Aadhaar verification",
+  consentPurpose: "To complete PayTeam KYC using Aadhaar verification",
   stepNumber: 2,
 });
 
@@ -28,7 +44,7 @@ function createAadhaarService({
   digilocker = digilockerService,
   model = digilockerModel,
   identityModel = aadhaarIdentityModel,
-  validateDocument = validateAadhaarXml,
+  validateDocument = validateRuntimeAadhaar,
 } = {}) {
   async function initiateVerification(userId, input = {}) {
     return digilocker.initiateAuthorization(userId, "aadhaar", input);
@@ -51,6 +67,7 @@ function createAadhaarService({
     await setDiagnosticStage("aadhaar_transactional_persistence");
     const completion = await model.completeVerification({
       ...attempt,
+      aadhaarTrustMode: getLiveKycConfig()?.aadhaarTrustMode,
       maskedIdentifier: extracted.maskedIdentifier,
       verifiedName: extracted.verifiedName,
       persistIdentity: (connection, context) => identityModel.persistVerifiedIdentity(connection, {

@@ -1,0 +1,17 @@
+{
+  "version": "v1",
+  "disclosures": {
+    "aadhaar": "",
+    "pan": "",
+    "bank": "",
+    "media": ""
+  },
+  "mediaRetention": "",
+  "videoConsentScript": "",
+  "agreement": {
+    "code": "PAYTEAM_CUSTOMER_AGREEMENT",
+    "version": "v1",
+    "title": "PayTeam Customer Agreement",
+    "content": ""
+  }
+}
