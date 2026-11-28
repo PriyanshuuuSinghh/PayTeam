@@ -532,10 +532,21 @@ test("health and auth endpoints respond with the documented authorization and sa
   authModel.isUserActive = async () => true;
   authModel.findActiveUserById = async () => activeUser();
   authModel.findUserByIdentifier = async () => account;
-  pool.execute = async (sql) =>
-    sql.includes("SELECT request_count")
+  let dashboardAccess = "admin";
+  let dashboardAccessQueries = 0;
+  pool.execute = async (sql, params) => {
+    if (sql.includes("AS is_admin")) {
+      dashboardAccessQueries++;
+      assert.deepEqual(params, [String(account.id)]);
+      assert.match(sql, /r\.id = 1 AND r\.slug = 'AD'/);
+      assert.match(sql, /u\.status = 'active'/);
+      if (dashboardAccess === "unavailable") throw new Error("Database unavailable");
+      return [dashboardAccess === "inactive" ? [] : [{ is_admin: dashboardAccess === "admin" ? 1 : 0 }]];
+    }
+    return sql.includes("SELECT request_count")
       ? [[{ request_count: 1 }]]
       : [{ affectedRows: 1 }];
+  };
   const server = app.listen(0);
   try {
     assert.equal(app.get("trust proxy"), false);
@@ -595,10 +606,22 @@ test("health and auth endpoints respond with the documented authorization and sa
     const healthPath = `${base}/api/admin/platform-health`;
     const headers = { authorization: `Bearer ${verifiedBody.data.accessToken}` };
     assert.equal((await fetch(healthPath)).status, 401);
-    authModel.isAdmin = async () => false;
+    assert.equal(dashboardAccessQueries, 0);
+    dashboardAccess = "inactive";
+    assert.equal((await fetch(healthPath, { headers })).status, 401);
+    dashboardAccess = "forbidden";
     assert.equal((await fetch(healthPath, { headers })).status, 403);
-    authModel.isAdmin = async () => true;
+    dashboardAccess = "unavailable";
+    assert.equal((await fetch(healthPath, { headers })).status, 503);
+    dashboardAccess = "admin";
+    const beforeHealthQueries = dashboardAccessQueries;
+    // The read-only dashboard path must use only the combined lookup.
+    const activeCheck = t.mock.method(authModel, "isUserActive", async () => { throw new Error("Unexpected active check"); });
+    const roleCheck = t.mock.method(authModel, "isAdmin", async () => { throw new Error("Unexpected role check"); });
     const platformHealth = await fetch(healthPath, { headers });
+    activeCheck.mock.restore();
+    roleCheck.mock.restore();
+    assert.equal(dashboardAccessQueries, beforeHealthQueries + 1);
     assert.equal(platformHealth.status, 200);
     assert.equal(platformHealth.headers.get("cache-control"), "no-store");
     const { apiLatency } = (await platformHealth.json()).data;
@@ -610,9 +633,9 @@ test("health and auth endpoints respond with the documented authorization and sa
 
     const queuePath = `${base}/api/admin/kyc/queue-summary`;
     assert.equal((await fetch(queuePath)).status, 401);
-    authModel.isAdmin = async () => false;
+    dashboardAccess = "forbidden";
     assert.equal((await fetch(queuePath, { headers })).status, 403);
-    authModel.isAdmin = async () => true;
+    dashboardAccess = "admin";
 
     let queueRow = {
       total: 4, average_wait_seconds: "3600.5", under_one_hour: 1,
@@ -648,23 +671,23 @@ test("health and auth endpoints respond with the documented authorization and sa
 
     const businessPath = `${base}/api/admin/business-performance`;
     assert.equal((await fetch(businessPath)).status, 401);
-    authModel.isAdmin = async () => false;
+    dashboardAccess = "forbidden";
     assert.equal((await fetch(businessPath, { headers })).status, 403);
-    authModel.isAdmin = async () => true;
+    dashboardAccess = "admin";
     assert.equal((await fetch(`${businessPath}?period=invalid`, { headers })).status, 400);
 
     const insightsPath = `${base}/api/admin/business-insights`;
     assert.equal((await fetch(insightsPath)).status, 401);
-    authModel.isAdmin = async () => false;
+    dashboardAccess = "forbidden";
     assert.equal((await fetch(insightsPath, { headers })).status, 403);
-    authModel.isAdmin = async () => true;
+    dashboardAccess = "admin";
     assert.equal((await fetch(`${insightsPath}?period=invalid`, { headers })).status, 400);
 
     const accountSummaryPath = `${base}/api/admin/account-summary`;
     assert.equal((await fetch(accountSummaryPath)).status, 401);
-    authModel.isAdmin = async () => false;
+    dashboardAccess = "forbidden";
     assert.equal((await fetch(accountSummaryPath, { headers })).status, 403);
-    authModel.isAdmin = async () => true;
+    dashboardAccess = "admin";
     const executeWithQueue = pool.execute;
     pool.execute = async (sql, params) => {
       if (!sql.includes("AS has_retailer_role")) return executeWithQueue(sql, params);

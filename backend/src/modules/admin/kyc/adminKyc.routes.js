@@ -5,6 +5,7 @@ import adminKycController from "./adminKyc.controller.js";
 import {
   requireAuth,
   requireAdmin,
+  requireActiveAdmin,
 } from "../../../middlewares/auth.middleware.js";
 
 const router = Router();
@@ -19,8 +20,7 @@ router.get(
 
 router.get(
   "/queue-summary",
-  requireAuth,
-  requireAdmin,
+  requireActiveAdmin,
   adminKycController.getKycQueueSummaryController,
 );
 

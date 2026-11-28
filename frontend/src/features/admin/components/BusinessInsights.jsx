@@ -44,31 +44,33 @@ function InsightCard({ title, icon: Icon, tooltip, appearance = "", children }) 
 
 function KycFunnel({ funnel, status, window }) {
   if (!funnel) return <p role="status" className="text-sm text-slate-600">{status}</p>;
-  if (funnel.totalCases === 0) {
-    return <p role="status" className="text-sm text-slate-600">No customer KYC cases opened in this period.</p>;
-  }
 
+  const hasCases = funnel.totalCases > 0;
   const cohortUrl = window ? `/admin/kyc?from=${window.start}&to=${window.end}` : null;
   return (
     <>
-      <p className="mb-3 text-sm text-slate-600">
-        {cohortUrl ? <Link to={cohortUrl} className="font-semibold text-blue-800 underline">{number.format(funnel.totalCases)} customer cases</Link>
-          : `${number.format(funnel.totalCases)} customer cases`} opened in this period. Bars show current progress.
-      </p>
+      <div className="mb-3 min-h-10 text-sm text-slate-600">
+        {hasCases ? (
+          <p>
+            {cohortUrl ? <Link to={cohortUrl} className="font-semibold text-blue-800 underline">{number.format(funnel.totalCases)} customer cases</Link>
+              : `${number.format(funnel.totalCases)} customer cases`} opened in this period. Percentages use all cases in this cohort.
+          </p>
+        ) : <p role="status">No customer KYC cases opened in this period. Percentages are unavailable.</p>}
+      </div>
       <ol aria-label="KYC step completion" className="space-y-1.5">
         {funnel.steps.map(({ step, label, completed }) => {
-          const share = completed / funnel.totalCases;
+          const share = hasCases ? completed / funnel.totalCases : null;
           return (
             <li key={step}>
               <div className="mb-1 flex items-center justify-between gap-2">
                 {cohortUrl ? <Link to={`${cohortUrl}&step=${step}`} className="text-sm leading-5 text-blue-800 hover:underline">{step}. {label}</Link>
                   : <span className="text-sm leading-5 text-slate-800">{step}. {label}</span>}
                 <span className="shrink-0 text-xs font-semibold tabular-nums text-slate-700">
-                  {number.format(completed)} ({percent.format(share)})
+                  {number.format(completed)} ({share === null ? <span aria-label="Percentage unavailable">—</span> : percent.format(share)})
                 </span>
               </div>
               <div aria-hidden="true" className="admin-glass-track h-2 overflow-hidden rounded-full bg-blue-50">
-                <div className="admin-glass-chart-fill h-full rounded-full" style={{ width: `${share * 100}%` }} />
+                {share > 0 && <div className="admin-glass-chart-fill h-full rounded-full" style={{ width: `${share * 100}%` }} />}
               </div>
             </li>
           );
@@ -76,7 +78,8 @@ function KycFunnel({ funnel, status, window }) {
       </ol>
       <p className="admin-glass-chip mt-3 rounded-lg bg-blue-50 px-2.5 py-2 text-xs text-slate-700">
         {cohortUrl ? <Link to={`${cohortUrl}&status=approved`} className="font-semibold text-blue-800 underline">{number.format(funnel.approvedCases)} approved after review</Link>
-          : `${number.format(funnel.approvedCases)} approved after review`} ({percent.format(funnel.approvedCases / funnel.totalCases)} of cases opened)
+          : `${number.format(funnel.approvedCases)} approved after review`}
+        {hasCases && ` (${percent.format(funnel.approvedCases / funnel.totalCases)} of cases opened)`}
       </p>
     </>
   );
@@ -117,7 +120,7 @@ export const BusinessInsights = memo(function BusinessInsights({ filter, refresh
           </p>
         )}
         <div className="grid items-start gap-2 lg:grid-cols-2 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,0.9fr)]">
-          <InsightCard title="KYC Funnel" tooltip="Each bar counts cases that currently completed this step and every preceding step. Approval reflects the review outcome for the same cohort.">
+          <InsightCard title="KYC Funnel" tooltip="Each bar counts cases that have currently completed this step and every preceding step. The selected period filters when cases opened. Approval is a separate review outcome for the same cohort.">
             <KycFunnel funnel={data?.kycFunnel} status={status} window={data?.window} />
             <MetricFreshness {...current} />
           </InsightCard>

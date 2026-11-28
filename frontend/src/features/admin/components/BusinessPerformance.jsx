@@ -50,19 +50,27 @@ function BusinessMetric({ title, icon: Icon, accent, value, detail, change, fres
 
 const loadPerformance = (signal, filter) => fetchBusinessPerformance(filter, signal);
 
-export function BusinessPerformance({ refreshVersion = 0, onRefreshComplete }) {
+export function BusinessPerformance() {
   const [filter, setFilter] = useState({ period: "24h" });
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const [completedVersion, setCompletedVersion] = useState(null);
   const [customOpen, setCustomOpen] = useState(false);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const onComplete = useCallback((at, version) => onRefreshComplete?.({ version, at }), [onRefreshComplete]);
+  const onComplete = useCallback((_at, version) => setCompletedVersion(version), []);
   const currentResult = useDashboardMetric(loadPerformance, 60_000, { params: filter, refreshVersion, onComplete });
   const signups = currentResult?.data?.signups;
   const wallet = currentResult?.data?.walletBalance;
   const window = currentResult.data?.window;
   const status = currentResult.failed ? "Could not load" : currentResult.loading ? "Loading…" : "Unavailable";
 
-  return (
+  return <>
+    <div className="flex justify-end">
+      <button type="button" className="gw-chip" disabled={completedVersion !== refreshVersion}
+        onClick={() => setRefreshVersion(version => version + 1)}>
+        Refresh business metrics
+      </button>
+    </div>
     <section aria-labelledby="business-performance-heading" className="admin-glass-section rounded-2xl border p-2.5 sm:p-3">
       <div className="admin-glass-section-heading mb-2 flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex items-center gap-3">
@@ -157,5 +165,5 @@ export function BusinessPerformance({ refreshVersion = 0, onRefreshComplete }) {
         <BusinessInsights filter={filter} refreshVersion={refreshVersion} />
       </div>
     </section>
-  );
+  </>;
 }

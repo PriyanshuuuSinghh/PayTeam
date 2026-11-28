@@ -46,6 +46,24 @@
 .gw-compact .gw-sidebar .gw-nav-label {display:none}
 .gw-compact .gw-sidebar {padding-inline:8px}
 .gw-compact .gw-sidebar nav a,.gw-compact .gw-collapse {justify-content:center;padding-inline:0}
+.gw-sidebar:has(.gw-admin-nav) {min-height:0}
+.gw-sidebar .gw-admin-nav {
+  min-height:0;overflow-y:auto;overscroll-behavior-y:contain;
+  scroll-behavior:smooth;scrollbar-width:thin;scrollbar-color:#777d8b66 transparent;
+}
+.gw-sidebar:has(.gw-admin-nav) .gw-collapse {flex-shrink:0}
+.gw-admin-nav-group + .gw-admin-nav-group {border-top:1px solid var(--line);padding-top:5px}
+.gw .gw-admin-nav-heading {
+  margin:5px 9px 3px;color:var(--muted);font-size:.6875rem;font-weight:700;
+  letter-spacing:.05em;text-transform:uppercase;
+}
+.gw .gw-admin-nav .gw-nav-label {min-width:0;white-space:normal;line-height:1.2}
+.gw .gw-admin-role-links {margin:0 8px 4px 17px;padding-left:5px;border-left:1px solid var(--line)}
+.gw .gw-admin-role-links a {min-height:32px;font-size:.75rem;white-space:normal;overflow-wrap:anywhere}
+.gw-compact .gw-sidebar :is(.gw-admin-nav-heading,.gw-admin-role-links) {display:none}
+@media(prefers-reduced-motion:reduce) {
+  .gw-sidebar .gw-admin-nav {scroll-behavior:auto}
+}
 .gw-header {grid-column:2;display:flex;align-items:center;gap:clamp(12px,2.7vw,50px);padding:5px clamp(17px,2.55vw,44px) 0 9px;min-width:0}
 .gw-brand {flex:0 0 23%;display:flex;align-items:center;gap:clamp(8px,1.05vw,17px);text-decoration:none;color:inherit;white-space:nowrap}
 .gw-brand strong {display:block;font-size:clamp(21px,1.88vw,29px);letter-spacing:-.045em;line-height:1.14}

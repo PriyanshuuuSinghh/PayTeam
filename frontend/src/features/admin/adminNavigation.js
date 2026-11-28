@@ -27,7 +27,7 @@ export const adminNavigationGroups = [
     { label: "Notifications", icon: Bell, path: "/admin/notifications", unavailable: true },
     { label: "Risk & Fraud", icon: ShieldAlert, path: "/admin/risk", unavailable: true },
     { label: "Admin & Roles", icon: Users, path: "/admin/roles", unavailable: true },
-    { label: "Settings", icon: Settings, path: "/admin/settings", unavailable: true },
+    { label: "Settings", icon: Settings, path: "/admin/settings" },
   ] },
 ];
 

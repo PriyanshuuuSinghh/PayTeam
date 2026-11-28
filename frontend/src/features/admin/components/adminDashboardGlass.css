@@ -187,3 +187,165 @@
   background: linear-gradient(150deg, #3e3e3e, #222);
   box-shadow: inset 0 1px rgb(255 255 255 / 25%), 0 3px 8px rgb(24 24 24 / 22%);
 }
+
+/* Admin dialogs and tooltips may be portalled outside the workspace. */
+:is(.gw-admin-shell[data-theme="dark"], body:has(.gw-admin-shell[data-theme="dark"]) :is([data-slot="dialog-content"], .admin-glass-tooltip)) {
+  color-scheme: dark;
+  --admin-text: #f1f5fb;
+  --admin-muted: #b8c6d8;
+  --admin-link: #a5caff;
+  --admin-field: #252f3f;
+  --admin-surface: #354154;
+  --admin-hover: #435168;
+  --admin-line: #596a83;
+  --admin-rim: rgb(196 215 244 / 26%);
+  --admin-reflection: inset 0 1px rgb(206 222 248 / 16%);
+  --admin-shadow: 0 3px 10px rgb(12 18 28 / 28%);
+  --admin-glass: linear-gradient(145deg, rgb(72 85 108 / 92%), rgb(46 57 75 / 90%));
+  --admin-section: linear-gradient(150deg, rgb(58 70 90 / 94%), rgb(40 50 66 / 92%));
+  --admin-control: linear-gradient(150deg, #495970, #374459);
+  --admin-fill: linear-gradient(180deg, #92bbff, #5688df);
+  --admin-success: #95e5bd;
+  --admin-warning: #ffd58a;
+  --admin-danger: #ffb0bc;
+  --admin-violet: #d7bcff;
+  --admin-success-bg: #24483d;
+  --admin-warning-bg: #4c402d;
+  --admin-danger-bg: #513740;
+  --admin-violet-bg: #403754;
+
+  --foreground: var(--admin-text);
+  --background: var(--admin-field);
+  --card: var(--admin-surface);
+  --card-foreground: var(--admin-text);
+  --popover: var(--admin-surface);
+  --popover-foreground: var(--admin-text);
+  --primary: #2e61aa;
+  --primary-foreground: #fff;
+  --secondary: var(--admin-surface);
+  --secondary-foreground: var(--admin-text);
+  --muted: var(--admin-surface);
+  --muted-foreground: var(--admin-muted);
+  --accent: var(--admin-hover);
+  --accent-foreground: var(--admin-text);
+  --border: var(--admin-rim);
+  --input: var(--admin-line);
+  --ring: var(--admin-link);
+  --destructive: var(--admin-danger);
+
+  --color-slate-50: var(--admin-field);
+  --color-slate-100: var(--admin-surface);
+  --color-slate-200: var(--admin-rim);
+  --color-slate-300: var(--admin-line);
+  --color-slate-400: var(--admin-muted);
+  --color-slate-500: var(--admin-muted);
+  --color-slate-600: var(--admin-muted);
+  --color-slate-700: #d1dced;
+  --color-slate-800: #e0e8f4;
+  --color-slate-900: var(--admin-text);
+  --color-slate-950: var(--admin-text);
+  --color-blue-50: #304565;
+  --color-blue-100: #3a5173;
+  --color-blue-200: #627da4;
+  --color-blue-500: #81b2ff;
+  --color-blue-600: var(--primary);
+  --color-blue-700: var(--admin-link);
+  --color-blue-800: var(--admin-link);
+  --color-blue-900: var(--admin-link);
+  --color-emerald-50: var(--admin-success-bg);
+  --color-emerald-100: var(--admin-success-bg);
+  --color-emerald-200: #548471;
+  --color-emerald-600: var(--admin-success);
+  --color-emerald-700: var(--admin-success);
+  --color-emerald-800: var(--admin-success);
+  --color-amber-50: var(--admin-warning-bg);
+  --color-amber-200: #8c7044;
+  --color-amber-600: var(--admin-warning);
+  --color-amber-700: var(--admin-warning);
+  --color-amber-800: var(--admin-warning);
+  --color-amber-950: var(--admin-warning);
+  --color-orange-50: var(--admin-warning-bg);
+  --color-orange-100: var(--admin-warning-bg);
+  --color-orange-700: var(--admin-warning);
+  --color-orange-800: var(--admin-warning);
+  --color-rose-50: var(--admin-danger-bg);
+  --color-rose-200: #a16c7a;
+  --color-rose-500: var(--admin-danger);
+  --color-rose-600: var(--admin-danger);
+  --color-rose-700: var(--admin-danger);
+  --color-violet-50: var(--admin-violet-bg);
+  --color-violet-100: var(--admin-violet-bg);
+  --color-violet-700: var(--admin-violet);
+  --color-violet-800: var(--admin-violet);
+}
+
+.gw-admin-shell[data-theme="dark"] {
+  --ink: var(--admin-text);
+  --sheet: var(--admin-field);
+  --line: var(--admin-rim);
+  --glass: var(--admin-glass);
+  --button: var(--admin-control);
+}
+
+.gw-admin-shell[data-theme="dark"] .payteam-admin-glass {background: transparent}
+.gw-admin-shell[data-theme="dark"] .admin-glass-section {
+  background: var(--admin-section);
+  border-color: var(--admin-rim);
+  box-shadow: var(--admin-reflection), var(--admin-shadow);
+}
+.gw-admin-shell[data-theme="dark"] .admin-glass-section-heading {
+  border-color: var(--admin-rim);
+  box-shadow: none;
+}
+.gw-admin-shell[data-theme="dark"] :is([data-slot="card"], .admin-glass-card, .admin-glass-inset, .admin-glass-tile:not(.admin-glass-wallet), .admin-glass-menu) {
+  background: var(--admin-glass);
+  border-color: var(--admin-rim);
+  box-shadow: var(--admin-reflection), var(--admin-shadow);
+}
+.gw-admin-shell[data-theme="dark"] :is(.admin-glass-icon, .admin-glass-control, .admin-glass-chip) {
+  background: var(--admin-control);
+  border-color: var(--admin-rim);
+  box-shadow: var(--admin-reflection);
+}
+.gw-admin-shell[data-theme="dark"] :is(.admin-glass-wallet .admin-glass-icon, .admin-glass-wallet .admin-glass-chip) {
+  background: rgb(238 255 248 / 19%);
+  color: white;
+}
+.gw-admin-shell[data-theme="dark"] :is(.admin-glass-selected, .bg-blue-600, .bg-blue-700, .bg-blue-800).text-white {
+  background: var(--primary);
+  box-shadow: var(--admin-reflection);
+}
+.gw-admin-shell[data-theme="dark"] :is(.admin-glass-control, .admin-glass-selected, .bg-blue-600, .bg-blue-700, .bg-blue-800):hover:not(:disabled) {
+  background: var(--admin-hover);
+}
+.gw-admin-shell[data-theme="dark"] .admin-glass-track {
+  background: var(--admin-field);
+  box-shadow: inset 0 1px 3px rgb(12 18 28 / 44%);
+}
+.gw-admin-shell[data-theme="dark"] .admin-glass-chart-fill {
+  background: var(--admin-fill);
+  box-shadow: var(--admin-reflection);
+}
+.gw-admin-shell[data-theme="dark"] :is(.admin-glass-sparkline, .text-blue-600) {color: var(--admin-link)}
+.gw-admin-shell[data-theme="dark"] [class~="text-[#354875]"] {color: var(--admin-muted)}
+.gw-admin-shell[data-theme="dark"] :is(.bg-white, .bg-white\/80, .bg-white\/95):not(.admin-glass-card) {
+  background: var(--admin-surface);
+}
+.gw-admin-shell[data-theme="dark"] :is(.admin-glass-workview-toolbar, .admin-glass-workview thead) {
+  background: var(--admin-control);
+  border-color: var(--admin-rim);
+}
+.gw-admin-shell[data-theme="dark"] .admin-glass-workview tbody tr:hover {background: var(--admin-hover)}
+.gw-admin-shell[data-theme="dark"] .border-white {border-color: var(--admin-rim)}
+:is(.gw-admin-shell[data-theme="dark"], body:has(.gw-admin-shell[data-theme="dark"]) [data-slot="dialog-content"]) :is(input:not([type="checkbox"], [type="radio"]), select, textarea) {
+  background-color: var(--admin-field);
+  color: var(--admin-text);
+  border-color: var(--admin-line);
+  box-shadow: none;
+}
+.gw-admin-shell[data-theme="dark"] select option {background: var(--admin-field);color: var(--admin-text)}
+body:has(.gw-admin-shell[data-theme="dark"]) .admin-glass-tooltip {
+  background: var(--admin-section);
+  color: var(--admin-text);
+  box-shadow: var(--admin-reflection), var(--admin-shadow);
+}
