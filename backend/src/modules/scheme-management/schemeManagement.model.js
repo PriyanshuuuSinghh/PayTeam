@@ -39,6 +39,52 @@ function listSchemes(pagination) {
   return list(SCHEME_FIELDS, "FROM schemes", [], "schemes.id ASC", pagination);
 }
 
+function listAssignmentOptions(pagination) {
+  return list(SCHEME_FIELDS, "FROM schemes WHERE status = 1", [], "schemes.id ASC", pagination);
+}
+
+function findAssignmentTarget(connection, schemeId) {
+  return first(connection, `SELECT status FROM schemes WHERE id = ${ID} FOR SHARE`, [schemeId]);
+}
+
+function findCustomer(id) {
+  return first(pool, `SELECT 1 AS found FROM users WHERE id = ${ID} AND role_id = 2`, [id]);
+}
+
+async function lockCustomers(connection, customerIds) {
+  const [rows] = await connection.execute(`
+    SELECT CAST(u.id AS CHAR) AS id, CAST(u.scheme_id AS CHAR) AS schemeId, u.status
+    FROM users AS u WHERE u.id IN (${customerIds.map(() => ID).join(", ")}) AND u.role_id = 2
+    ORDER BY u.id FOR UPDATE
+  `, customerIds);
+  return rows;
+}
+
+async function saveAssignments(connection, customers, schemeId, actor) {
+  const ids = customers.map(({ id }) => id);
+  const [result] = await connection.execute(`
+    UPDATE users SET scheme_id = ${ID} WHERE id IN (${ids.map(() => ID).join(", ")})
+  `, [schemeId, ...ids]);
+  if (result.affectedRows !== ids.length) throw new Error("Scheme assignment row count changed");
+  await connection.execute(`
+    INSERT INTO scheme_assignment_history (customer_id, previous_scheme_id, new_scheme_id, administrator_id)
+    VALUES ${ids.map(() => `(${ID}, ${ID}, ${ID}, ${ID})`).join(", ")}
+  `, customers.flatMap((customer) => [customer.id, customer.schemeId, schemeId, actor]));
+}
+
+async function listAssignmentHistory(customerId, pagination) {
+  const page = await list(`
+    CAST(id AS CHAR) AS id, CAST(previous_scheme_id AS CHAR) AS previousSchemeId,
+    CAST(new_scheme_id AS CHAR) AS newSchemeId, CAST(administrator_id AS CHAR) AS administratorId,
+    UNIX_TIMESTAMP(created_at) AS createdAt
+  `, `FROM scheme_assignment_history WHERE customer_id = ${ID}`, [customerId],
+  "scheme_assignment_history.id DESC", pagination);
+  return {
+    ...page,
+    items: page.items.map((item) => ({ ...item, createdAt: new Date(Number(item.createdAt) * 1000).toISOString() })),
+  };
+}
+
 function listVersions(schemeId, pagination) {
   return list(VERSION_FIELDS, `FROM scheme_versions WHERE scheme_id = ${ID}`, [schemeId], "version_number DESC", pagination);
 }
@@ -148,4 +194,5 @@ async function transaction(work) {
 export default {
   listSchemes, listVersions, listServices, findScheme, findVersion, insertScheme, updateScheme, updateSchemeStatus, updateDefault, insertDraft,
   initializeServices, findMasterService, findLinkedService, saveLinkedService, appendAudit, transaction,
+  listAssignmentOptions, findAssignmentTarget, findCustomer, lockCustomers, saveAssignments, listAssignmentHistory,
 };

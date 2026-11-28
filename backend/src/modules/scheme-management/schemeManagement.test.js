@@ -9,7 +9,7 @@ import { errorHandler, notFound } from "../../middlewares/error.middleware.js";
 import authModel from "../auth/auth.model.js";
 import model from "./schemeManagement.model.js";
 import { requireDefaultScheme } from "./schemeResolution.js";
-import { parseConfiguration, parseCreate, parseId, parsePagination, parseUpdate, validateEmptyAction } from "./schemeManagement.validator.js";
+import { parseAssignment, parseConfiguration, parseCreate, parseId, parsePagination, parseUpdate, validateEmptyAction } from "./schemeManagement.validator.js";
 
 test("scheme input validation restricts metadata and validates identifiers, pagination and draft changes", () => {
   const invalid = { statusCode: 400 };
@@ -43,6 +43,17 @@ test("default lookup fails closed when the configured row is missing", async () 
     },
   };
   await assert.rejects(requireDefaultScheme(connection), { statusCode: 503, code: "SERVICE_UNAVAILABLE" });
+});
+
+test("customer scheme assignment accepts bounded, unique decimal-string identifiers", () => {
+  const invalid = { statusCode: 400 };
+  assert.deepEqual(parseAssignment({ schemeId: "9" }, "2"), { schemeId: "9", customerIds: ["2"] });
+  assert.deepEqual(parseAssignment({ schemeId: "9", customerIds: ["2", "4"] }), { schemeId: "9", customerIds: ["2", "4"] });
+  for (const customerIds of [[], ["2", "2"], [2], ["01"], ["18446744073709551616"], Array.from({ length: 101 }, (_, i) => String(i + 1))]) {
+    assert.throws(() => parseAssignment({ schemeId: "9", customerIds }), invalid);
+  }
+  assert.throws(() => parseAssignment({ schemeId: 9 }, "2"), invalid);
+  assert.throws(() => parseAssignment({ schemeId: "9", administratorId: "1" }, "2"), invalid);
 });
 
 test("scheme admin routes enforce existing authentication and the feature flag", async (t) => {
@@ -83,7 +94,9 @@ test("scheme admin routes enforce existing authentication and the feature flag",
   for (const [method, path] of [["GET", ""], ["POST", ""], ["PATCH", "/1"], ["GET", "/1/versions"],
     ["POST", "/1/versions"], ["GET", "/1/versions/1"], ["POST", "/1/versions/1/clone"],
     ["GET", "/1/versions/1/services"], ["PUT", "/1/versions/1/services/1"],
-    ["POST", "/1/activate"], ["POST", "/1/deactivate"], ["PUT", "/1/default"], ["GET", "/customers/1/resolution"]]) {
+    ["POST", "/1/activate"], ["POST", "/1/deactivate"], ["PUT", "/1/default"], ["GET", "/customers/1/resolution"],
+    ["GET", "/assignment-options"], ["GET", "/customers/1/assignment-history"],
+    ["PUT", "/customers/1/assignment"], ["PUT", "/customers/assignments"]]) {
     assert.equal((await request(path, { method })).status, 401);
     assert.equal((await request(path, { method, id: "2" })).status, 403);
   }
@@ -93,5 +106,6 @@ test("scheme admin routes enforce existing authentication and the feature flag",
   assert.equal((await request("/1", { method: "PATCH", id: "1", body: { status: 1 } })).status, 400);
   assert.equal((await request("/1/versions", { method: "POST", id: "1", body: { status: "published" } })).status, 400);
   assert.equal((await request("/1/versions/1/publish", { method: "POST", id: "1" })).status, 404);
+  assert.equal((await request("/customers/assignments", { method: "PUT", id: "1", body: { schemeId: "1", customerIds: [] } })).status, 400);
   assert.equal(db.mock.callCount(), 0);
 });

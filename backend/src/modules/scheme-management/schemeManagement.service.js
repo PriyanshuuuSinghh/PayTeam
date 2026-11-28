@@ -1,7 +1,7 @@
 import ApiError from "../../utils/ApiError.js";
 import model from "./schemeManagement.model.js";
 import { requireDefaultScheme, resolveCustomerScheme } from "./schemeResolution.js";
-import { parseId, parsePagination, parseCreate, parseUpdate, parseConfiguration, validateEmptyAction } from "./schemeManagement.validator.js";
+import { parseId, parsePagination, parseCreate, parseUpdate, parseConfiguration, validateEmptyAction, parseAssignment } from "./schemeManagement.validator.js";
 
 async function database(work) {
   try {
@@ -117,6 +117,49 @@ function getCustomerResolution(rawUserId) {
   return database(() => resolveCustomerScheme(userId));
 }
 
+function listAssignmentOptions(query) {
+  const pagination = parsePagination(query);
+  return database(() => model.listAssignmentOptions(pagination));
+}
+
+function listAssignmentHistory(rawCustomerId, query) {
+  const customerId = parseId(rawCustomerId, "customer");
+  const pagination = parsePagination(query);
+  return database(async () => {
+    if (!(await model.findCustomer(customerId))) throw new ApiError(404, "Customer not found");
+    return model.listAssignmentHistory(customerId, pagination);
+  });
+}
+
+function assignCustomers(body, actor, customerId) {
+  const { schemeId, customerIds } = parseAssignment(body, customerId);
+  return write(async (connection) => {
+    const scheme = await model.findAssignmentTarget(connection, schemeId);
+    if (!scheme) throw new ApiError(404, "Scheme not found");
+    if (scheme.status !== 1) throw new ApiError(409, "Only active schemes can be assigned");
+    const customers = await model.lockCustomers(connection, customerIds);
+    if (customers.length !== customerIds.length) throw new ApiError(404, "One or more customers were not found");
+    if (customers.some(({ status }) => status !== "active")) {
+      throw new ApiError(409, "All selected customers must have active accounts");
+    }
+
+    const changed = customers.filter((customer) => customer.schemeId !== schemeId);
+    if (changed.length) {
+      await model.saveAssignments(connection, changed, schemeId, actor);
+      await model.appendAudit(connection, {
+        schemeId, actor, action: customerId === undefined ? "CUSTOMER_SCHEMES_ASSIGNED" : "CUSTOMER_SCHEME_ASSIGNED",
+        after: { customerIds: changed.map(({ id }) => id), schemeId },
+      });
+    }
+
+    if (customerId !== undefined) {
+      const resolution = await resolveCustomerScheme(customerIds[0], connection);
+      return { ...resolution, changed: changed.length === 1 };
+    }
+    return { schemeId, requestedCount: customers.length, changedCount: changed.length };
+  });
+}
+
 function listVersions(rawId, query) {
   const schemeId = parseId(rawId, "scheme");
   const pagination = parsePagination(query);
@@ -179,4 +222,5 @@ function configureService(rawId, rawVersionId, rawServiceId, body, actor) {
 export {
   listSchemes, getScheme, createScheme, updateScheme, listVersions, getVersion, createDraft, listServices, configureService,
   setSchemeStatus, replaceDefault, getCustomerResolution,
+  listAssignmentOptions, listAssignmentHistory, assignCustomers,
 };

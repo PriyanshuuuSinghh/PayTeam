@@ -24,8 +24,13 @@ const activateScheme = respond((req) => service.setSchemeStatus(req.params.schem
 const deactivateScheme = respond((req) => service.setSchemeStatus(req.params.schemeId, req.user.id, req.body, 0));
 const replaceDefault = respond((req) => service.replaceDefault(req.params.schemeId, req.user.id, req.body));
 const getCustomerResolution = respond((req) => service.getCustomerResolution(req.params.userId));
+const listAssignmentOptions = respond((req) => service.listAssignmentOptions(req.query));
+const listAssignmentHistory = respond((req) => service.listAssignmentHistory(req.params.userId, req.query));
+const assignCustomer = respond((req) => service.assignCustomers(req.body, req.user.id, req.params.userId));
+const assignCustomers = respond((req) => service.assignCustomers(req.body, req.user.id));
 
 export {
   listSchemes, getScheme, createScheme, updateScheme, listVersions, getVersion, createDraft, cloneVersion, listServices,
   configureService, activateScheme, deactivateScheme, replaceDefault, getCustomerResolution,
+  listAssignmentOptions, listAssignmentHistory, assignCustomer, assignCustomers,
 };

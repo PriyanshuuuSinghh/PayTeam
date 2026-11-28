@@ -70,4 +70,16 @@ function validateEmptyAction(body) {
   }
 }
 
-export { parseId, parsePagination, parseCreate, parseUpdate, parseConfiguration, validateEmptyAction };
+function parseAssignment(body, customerId) {
+  requireFields(body, customerId === undefined ? ["schemeId", "customerIds"] : ["schemeId"]);
+  const schemeId = parseId(body.schemeId, "scheme");
+  const rawIds = customerId === undefined ? body.customerIds : [customerId];
+  if (!Array.isArray(rawIds) || rawIds.length < 1 || rawIds.length > 100) {
+    throw new ApiError(400, "Select between 1 and 100 customers");
+  }
+  const customerIds = rawIds.map((id) => parseId(id, "customer"));
+  if (new Set(customerIds).size !== customerIds.length) throw new ApiError(400, "Customer identifiers must be unique");
+  return { schemeId, customerIds };
+}
+
+export { parseId, parsePagination, parseCreate, parseUpdate, parseConfiguration, validateEmptyAction, parseAssignment };

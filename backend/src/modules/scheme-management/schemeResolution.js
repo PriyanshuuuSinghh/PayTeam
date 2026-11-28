@@ -16,8 +16,8 @@ async function requireDefaultScheme(connection, { exclusive = false } = {}) {
 
 // Administrative resolution uses the active assignment or default in one snapshot.
 // Pricing still requires a separately validated published configuration.
-async function resolveCustomerScheme(userId) {
-  const [[row]] = await pool.execute(`
+async function resolveCustomerScheme(userId, connection = pool) {
+  const [[row]] = await connection.execute(`
     SELECT CAST(u.id AS CHAR) AS userId, CAST(u.scheme_id AS CHAR) AS assignedSchemeId,
            assigned.code AS assignedCode, assigned.name AS assignedName, assigned.status AS assignedStatus,
            CAST(fallback.id AS CHAR) AS defaultId, fallback.code AS defaultCode, fallback.name AS defaultName

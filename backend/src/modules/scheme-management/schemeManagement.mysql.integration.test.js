@@ -74,11 +74,23 @@ test("scheme management on the disposable MySQL upgrade fixture", {
   }
 
   await t.test("preserves existing scheme metadata, assignments and migration history", async () => {
-    const legacy = await request("/25", 200);
+    const { updatedBy, updatedAt, ...legacy } = await request("/25", 200);
     assert.deepEqual(legacy, {
       id: "25", code: "LEGACY-25", name: "Default-Scheme", description: null, status: 0, isDefault: 0,
-      createdBy: null, updatedBy: null, createdAt: "2025-01-01T00:00:00.000Z", updatedAt: "2025-02-01T00:00:00.000Z",
+      createdBy: null, createdAt: "2025-01-01T00:00:00.000Z",
     });
+    const [[lastLifecycleChange]] = await connection.query(`
+      SELECT CAST(e.administrator_id AS CHAR) AS actor, s.updated_at <= e.created_at AS recordedAfterUpdate
+      FROM scheme_audit_events AS e JOIN schemes AS s ON s.id = e.scheme_id
+      WHERE e.scheme_id = 25 AND e.action = 'SCHEME_DEACTIVATED' ORDER BY e.id DESC LIMIT 1
+    `);
+    // The fixture can be reused after the lifecycle tests have legitimately updated it.
+    assert.equal(updatedBy, lastLifecycleChange?.actor ?? null);
+    if (lastLifecycleChange) {
+      assert.equal(lastLifecycleChange.recordedAfterUpdate, 1);
+    } else {
+      assert.equal(updatedAt, "2025-02-01T00:00:00.000Z");
+    }
     const seeded = await request("/1", 200);
     assert.equal(seeded.code, "LEGACY-1");
     assert.equal(seeded.name, "Default Scheme");
@@ -90,7 +102,8 @@ test("scheme management on the disposable MySQL upgrade fixture", {
     assert.deepEqual((await request("/1/versions", 200)).items, []);
     const [history] = await connection.query("SELECT migration, sha256 FROM schema_migrations ORDER BY migration");
     assert.deepEqual(history.map(({ migration }) => migration), [
-      "001_initial_schema.sql", "002_master_service_operator_catalogue.sql", "003_scheme_versions_and_audit.sql", "004_scheme_default.sql",
+      "001_initial_schema.sql", "002_master_service_operator_catalogue.sql", "003_scheme_versions_and_audit.sql",
+      "004_scheme_default.sql", "005_customer_scheme_assignments.sql",
     ]);
     for (const { migration, sha256 } of history) {
       const sql = await readFile(new URL(`../../../database/migrations/${migration}`, import.meta.url), "utf8");
@@ -335,5 +348,129 @@ test("scheme management on the disposable MySQL upgrade fixture", {
       await setStatus(second.id, "deactivate");
     }
     assert.equal(await readDefault(), "1");
+  });
+
+  await t.test("validates assignment eligibility and exposes append-only history with resolver-backed fallback", async () => {
+    const { registerCustomer } = await import("../auth/auth.model.js");
+    const target = await request("", 201, { method: "POST", body: { code: "ASSIGN-" + suffix, name: "Assignment " + suffix } });
+    const { id } = await registerCustomer({
+      name: "Assignment Test Customer", email: `assignment-${suffix}@example.test`,
+      mobile: "+91" + randomInt(6_000_000_000, 10_000_000_000), passwordHash: "unusable-test-hash",
+    });
+    const customerId = String(id);
+    const path = `/customers/${id}`;
+    const assign = (schemeId, status) => request(path + "/assignment", status, { method: "PUT", body: { schemeId } });
+    await request(path + "/assignment", 401, { method: "PUT", subject: null, body: { schemeId: target.id } });
+    await request(path + "/assignment", 403, { method: "PUT", subject: customer, body: { schemeId: target.id } });
+    await request(path + "/assignment-history", 403, { subject: customer });
+    await request("/assignment-options", 403, { subject: customer });
+    await request(`/customers/${actor}/assignment`, 404, { method: "PUT", body: { schemeId: "1" } });
+    await assign("18446744073709551615", 404);
+    await assign(target.id, 409);
+    const before = await request("/assignment-options", 200);
+    assert.ok(before.items.every(({ status }) => status === 1));
+    assert.ok(!before.items.some((item) => item.id === target.id));
+    await request(`/${target.id}/activate`, 200, { method: "POST" });
+    assert.ok((await request("/assignment-options", 200)).items.some((item) => item.id === target.id));
+
+    const assigned = await assign(target.id, 200);
+    assert.equal(assigned.changed, true);
+    assert.equal(assigned.userId, customerId);
+    assert.equal(assigned.assignedScheme.id, target.id);
+    assert.deepEqual(assigned.assignedScheme, assigned.effectiveScheme);
+    assert.equal((await assign(target.id, 200)).changed, false);
+    const { items } = await request(path + "/assignment-history", 200);
+    assert.equal(items.length, 1);
+    const [history] = items;
+    assert.deepEqual([history.previousSchemeId, history.newSchemeId, history.administratorId], ["1", target.id, actor]);
+    const [[stored]] = await connection.execute("SELECT created_at AS createdAt FROM scheme_assignment_history WHERE id = ?", [history.id]);
+    assert.equal(history.createdAt, stored.createdAt.toISOString());
+    await assert.rejects(connection.execute("UPDATE scheme_assignment_history SET new_scheme_id = 1 WHERE id = ?", [history.id]), immutable);
+    await assert.rejects(connection.execute("DELETE FROM scheme_assignment_history WHERE id = ?", [history.id]), immutable);
+    const [[event]] = await connection.execute(`SELECT administrator_id AS actor, new_state AS state
+      FROM scheme_audit_events WHERE scheme_id = ? AND action = 'CUSTOMER_SCHEME_ASSIGNED'`, [target.id]);
+    assert.equal(String(event.actor), actor);
+    assert.deepEqual(event.state, { customerIds: [customerId], schemeId: target.id });
+
+    await request(`/${target.id}/deactivate`, 200, { method: "POST" });
+    const fallback = await request(path + "/resolution", 200);
+    assert.equal(fallback.source, "default");
+    assert.equal(fallback.assignedScheme.id, target.id);
+    assert.equal(fallback.effectiveScheme.id, "1");
+    await request(`/${target.id}/activate`, 200, { method: "POST" });
+    assert.equal((await request(path + "/resolution", 200)).effectiveScheme.id, target.id);
+    assert.deepEqual((await request(path + "/assignment-history", 200)).items, items);
+    await request(`/${target.id}/deactivate`, 200, { method: "POST" });
+  });
+
+  await t.test("bulk assignments validate the whole batch and roll back assignments, history and audit together", async (bulkTest) => {
+    const { registerCustomer } = await import("../auth/auth.model.js");
+    const target = await request("", 201, { method: "POST", body: { code: "BULK-" + suffix, name: "Bulk " + suffix } });
+    await request(`/${target.id}/activate`, 200, { method: "POST" });
+    const ids = [];
+    for (const index of [1, 2, 3]) {
+      const { id } = await registerCustomer({
+        name: "Bulk Test Customer", email: `bulk-${index}-${suffix}@example.test`,
+        mobile: "+91" + randomInt(6_000_000_000, 10_000_000_000), passwordHash: "unusable-test-hash",
+      });
+      ids.push(String(id));
+    }
+    const [first, second, blocked] = ids;
+    await connection.execute("UPDATE users SET status = 'blocked' WHERE id = ?", [blocked]);
+    const bulk = (customerIds, status, schemeId = target.id) =>
+      request("/customers/assignments", status, { method: "PUT", body: { customerIds, schemeId } });
+    const historyFor = async (id) => (await request(`/customers/${id}/assignment-history`, 200)).items;
+    const assertUnchanged = async () => {
+      for (const id of ids) {
+        assert.equal((await request(`/customers/${id}/resolution`, 200)).assignedScheme.id, "1");
+        assert.deepEqual(await historyFor(id), []);
+      }
+      const [[{ total }]] = await connection.execute(
+        "SELECT COUNT(*) AS total FROM scheme_audit_events WHERE scheme_id = ? AND action = 'CUSTOMER_SCHEMES_ASSIGNED'", [target.id],
+      );
+      assert.equal(Number(total), 0);
+    };
+
+    await bulk([first, first], 400);
+    await bulk([first, actor], 404);
+    await bulk([first, "18446744073709551615"], 404);
+    await bulk([first, blocked], 409);
+    await assertUnchanged();
+
+    const saveAssignments = model.saveAssignments;
+    const historyFailure = bulkTest.mock.method(model, "saveAssignments", (conn, rows, schemeId) =>
+      saveAssignments(conn, rows, schemeId, "18446744073709551615"));
+    await bulk([first, second], 503);
+    historyFailure.mock.restore();
+    await assertUnchanged();
+
+    const appendAudit = model.appendAudit;
+    const auditFailure = bulkTest.mock.method(model, "appendAudit", (conn, event) => appendAudit(conn, { ...event, actor: "999999" }));
+    await bulk([first, second], 503);
+    auditFailure.mock.restore();
+    await assertUnchanged();
+
+    const batch = await bulk([second, first], 200);
+    assert.deepEqual(batch, { schemeId: target.id, requestedCount: 2, changedCount: 2 });
+    assert.equal((await bulk([first, second], 200)).changedCount, 0);
+    for (const id of [first, second]) {
+      const [entry] = await historyFor(id);
+      assert.equal(entry.previousSchemeId, "1");
+      assert.equal(entry.newSchemeId, target.id);
+      assert.equal(entry.administratorId, actor);
+    }
+    assert.deepEqual(await historyFor(blocked), []);
+
+    const concurrent = await Promise.all([
+      bulk([first, second], 200, "1"),
+      bulk([second, first], 200, target.id),
+    ]);
+    assert.equal(concurrent[0].changedCount, 2);
+    assert.ok([0, 2].includes(concurrent[1].changedCount));
+    const [firstHistory, secondHistory] = await Promise.all([historyFor(first), historyFor(second)]);
+    assert.deepEqual(firstHistory.map(({ newSchemeId }) => newSchemeId), secondHistory.map(({ newSchemeId }) => newSchemeId));
+    assert.equal(firstHistory.length, concurrent[1].changedCount === 2 ? 3 : 2);
+    assert.equal((await request(`/customers/${first}/assignment-history?limit=1`, 200)).pagination.total, firstHistory.length);
+    await request(`/${target.id}/deactivate`, 200, { method: "POST" });
   });
 });

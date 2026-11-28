@@ -127,6 +127,25 @@ export const resetBackendUserPassword = async (id, { newPassword, confirmPasswor
   return response.data;
 };
 
+export async function fetchSchemeAssignmentOptions(offset, signal) {
+  const { data } = await api.get("/admin/schemes/assignment-options", { params: { offset }, signal });
+  return data.data;
+}
+
+export async function fetchCustomerSchemeResolution(id, signal) {
+  const { data } = await api.get(`/admin/schemes/customers/${id}/resolution`, { signal });
+  return data.data;
+}
+
+export async function assignCustomerSchemes(customerIds, schemeId) {
+  if (customerIds.length === 1) {
+    const { data } = await api.put(`/admin/schemes/customers/${customerIds[0]}/assignment`, { schemeId });
+    return data.data.changed ? 1 : 0;
+  }
+  const { data } = await api.put("/admin/schemes/customers/assignments", { customerIds, schemeId });
+  return data.data.changedCount;
+}
+
 export default {
   adminLogin,
   getAdminProfile,
