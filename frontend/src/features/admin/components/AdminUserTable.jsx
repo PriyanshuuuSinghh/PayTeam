@@ -1,4 +1,4 @@
-import React from "react";
+import { useState } from "react";
 import {
   Search,
   Download,
@@ -8,6 +8,12 @@ import {
   Eye,
 } from "lucide-react";
 import { Link } from "react-router-dom";
+import SchemeAssignmentModal from "../modals/SchemeAssignmentModal";
+
+function canAssignScheme(member) {
+  return Number(member.role_id) === 2 && member.status === "active" &&
+    (typeof member.id === "string" ? /^[1-9]\d*$/.test(member.id) : Number.isSafeInteger(member.id) && member.id > 0);
+}
 
 export function AdminUserTable({
   getCurrentRoleTitle = () => "All Users",
@@ -24,6 +30,19 @@ export function AdminUserTable({
   selectedRoleId = "",
   metricView = false,
 }) {
+  const [selected, setSelected] = useState(() => new Set());
+  const [assignmentCustomers, setAssignmentCustomers] = useState(null);
+  const selectedCustomers = filteredMembers.filter((member) => selected.has(String(member.id)) && canAssignScheme(member));
+
+  function toggleCustomer(id, checked) {
+    setSelected((previous) => {
+      const next = new Set(previous);
+      if (checked) next.add(String(id));
+      else next.delete(String(id));
+      return next;
+    });
+  }
+
   return (
     <div className="admin-glass-workview mx-auto max-w-7xl space-y-4 pb-8">
       {/* ── Breadcrumb & Page Title ───────────────────────────────── */}
@@ -68,6 +87,14 @@ export function AdminUserTable({
           </div>
 
           <div className="flex items-center gap-2.5 flex-wrap">
+            {!isLoadingUsers && !loadError && selectedCustomers.length > 0 && (
+              <button type="button" className="gw-chip" onClick={() => setAssignmentCustomers(selectedCustomers)}>
+                Assign scheme to {selectedCustomers.length} selected
+              </button>
+            )}
+            {selected.size > 0 && <button type="button" className="gw-chip" onClick={() => setSelected(new Set())}>
+              Clear selection
+            </button>}
             <span className="px-3 py-2 bg-blue-50 text-blue-700 border border-blue-200/80 font-bold rounded-xl text-xs">
               {isLoadingUsers || loadError ? "—" : filteredMembers.length + " found"}
             </span>
@@ -257,6 +284,14 @@ export function AdminUserTable({
                       {/* Action Button */}
                       <td className="py-4 px-5 text-center align-middle">
                         <div className="inline-flex items-center gap-1">
+                          {canAssignScheme(m) && <>
+                            <input type="checkbox" checked={selected.has(String(m.id))}
+                              disabled={!selected.has(String(m.id)) && selected.size >= 100}
+                              aria-label={`Select ${m.name} (#${m.id}) for scheme assignment`}
+                              onChange={(event) => toggleCustomer(m.id, event.target.checked)} />
+                            <button type="button" className="gw-chip" onClick={() => setAssignmentCustomers([m])}
+                              aria-label={`Assign scheme to ${m.name} (#${m.id})`}>Scheme</button>
+                          </>}
                           <Link to={`/admin/users/${m.id}?roleId=${encodeURIComponent(selectedRoleId)}`} className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition border border-slate-200 inline-flex items-center justify-center" title="View user profile">
                             <Eye className="w-4 h-4 text-black" />
                           </Link>
@@ -277,6 +312,13 @@ export function AdminUserTable({
           </table>
         </div>
       </div>
+      {assignmentCustomers && (
+        <SchemeAssignmentModal customers={assignmentCustomers} onClose={() => setAssignmentCustomers(null)}
+          onAssigned={() => {
+            setSelected(new Set());
+            setAssignmentCustomers(null);
+          }} />
+      )}
     </div>
   );
 }
