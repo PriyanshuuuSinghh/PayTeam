@@ -15,6 +15,15 @@ export const services = [
 export function workspaceLinks(admin, customerDirectory) {
   const base = admin ? "/admin" : "/user";
   const dashboard = base + "/dashboard";
+  if (!admin) return [
+    { label: "Dashboard", to: dashboard, icon: House },
+    { label: "Payments", to: dashboard + "#services", icon: Zap },
+    { label: "Transactions", to: dashboard + "#transactions", icon: ArrowLeftRight },
+    { label: "Wallet", to: dashboard + "#wallet", icon: Wallet },
+    { label: "Profile", to: base + "/profile", icon: UserRound },
+    { label: "Settings", to: base + "/settings", icon: Settings },
+    { label: "KYC", to: "/kyc", icon: IdCard },
+  ];
   return [
     { label: "Dashboard", to: dashboard, icon: House },
     admin ? { label: "Customers", to: customerDirectory || "/admin/users", icon: Users }

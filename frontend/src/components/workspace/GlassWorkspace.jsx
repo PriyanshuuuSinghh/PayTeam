@@ -44,9 +44,10 @@ export default function GlassWorkspace({ admin = false, permittedRoles = [], chi
   const base = admin ? "/admin" : "/user";
   const customer = permittedRoles.find(role => role.slug === "US");
   const links = workspaceLinks(admin, customer && "/admin/users?roleId=" + encodeURIComponent(customer.id));
+  const searchHint = admin ? "Find a customer directory, service or page…" : "Find a service, payment or page…";
   const overview = location.pathname === base + "/dashboard";
   const searchItems = [...links, ...(admin ? [{ label: "My profile", to: "/admin/profile", icon: UserRound }, { label: "Transactions", to: "/admin/reports#transactions", icon: ArrowLeftRight }] : []),
-    ...services.map(({ name, icon }) => ({ label: name, to: base + "/dashboard#service-" + encodeURIComponent(name), icon, locked: true }))];
+    ...services.filter(({ name }) => admin || name !== "Wallet").map(({ name, icon }) => ({ label: name, to: base + "/dashboard#service-" + encodeURIComponent(name), icon, locked: true }))];
   const results = searchItems.filter(item => item.label.toLowerCase().includes(search.trim().toLowerCase()));
   function openSearch() { setSearch(""); setDialog("search"); }
   function toggleTheme() {
@@ -95,7 +96,7 @@ export default function GlassWorkspace({ admin = false, permittedRoles = [], chi
         <button className="gw-round gw-menu" aria-label="Open navigation" onClick={() => setDialog("nav")}><Menu/></button>
         <Link className="gw-brand" to={base + "/dashboard"}><span className="gw-logo"><img src="/payteam-mark.svg" alt=""/></span>
           <span><strong>PayTeam</strong><small>{admin ? "Admin workspace" : "Payments for everyday life"}</small></span></Link>
-        <button className="gw-search" aria-label="Search workspace" onClick={openSearch}><i className="gw-orb"/><span>{admin ? "Find a customer directory, service or page…" : "Find a service, payment or page…"}</span><Search size={21}/></button>
+        <button className="gw-search" aria-label={"Search workspace. " + searchHint} onClick={openSearch}><i className="gw-orb"/><span>{searchHint}</span><Search size={21}/></button>
         <div className="gw-actions"><button className="gw-round" onClick={toggleTheme} aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}>{theme === "dark" ? <Sun/> : <Moon/>}</button>
         <button className="gw-round" aria-label="Account menu" onClick={() => setDialog("account")}><UserRound/></button></div>
       </header>
