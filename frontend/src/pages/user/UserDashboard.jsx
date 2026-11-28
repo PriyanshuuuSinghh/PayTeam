@@ -1,534 +1,213 @@
-import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
-import {
-  Calendar,
-  BarChart2,
-  BarChart3,
-  TrendingUp,
-  CreditCard,
-  Send,
-  QrCode,
-  Zap,
-  Search,
-  Download,
-  RefreshCw,
-  Filter,
-  MoreHorizontal,
-  ChevronLeft,
-  ChevronRight,
-  Clock,
-  AlertCircle,
-  ArrowUpRight,
-  Wallet,
-  Landmark,
-  Smartphone,
-} from "lucide-react";
-import { toast } from "sonner";
+import React, { useEffect, useId, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
+import { motion, useReducedMotion } from "motion/react";
+import { Wallet, Plus, ArrowDownUp, IndianRupee, Gift, ChartNoAxesColumnIncreasing, LayoutGrid, History, ArrowRight, ArrowUpRight, ShieldAlert, Clock, RefreshCw, Check, X } from "lucide-react";
+import { services } from "../../components/workspace/catalog";
+import { count } from "../../components/workspace/format";
+import FormDialog from "../../components/workspace/FormDialog";
 import { getKycStatus } from "../../api/kyc.api";
+import { interpretKycStatus } from "../../features/kyc/utils/kycFlow";
+import { useDashboardMetric } from "../../features/admin/hooks/useDashboardMetric";
+import "../../components/workspace/customer-dashboard.css";
 
-export default function UserDashboard() {
-  const currentUser = (() => {
-    try {
-      return JSON.parse(localStorage.getItem("user") || "{}");
-    } catch {
-      return {};
-    }
-  })();
+const serviceColors = { green: "#07934a", violet: "#7944e8", amber: "#b97800", aqua: "#007bda" };
+const quickServices = ["Mobile recharge", "DTH", "Electricity", "Water", "Broadband", "BBPS"].map(name => services.find(service => service.name === name));
+const spendingCategories = [
+  { label: "Recharges", color: "#0668f5" },
+  { label: "Bill Payments", color: "#22c8ef" },
+  { label: "Utilities", color: "#a170ed" },
+  { label: "Others", color: "#9aaccb" },
+];
+const money = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 });
 
-  const [kycData, setKycData] = useState(null);
+// Presentation-only contract. No fabricated balances, transactions or analytics.
+// Current API does not expose customer financial read models. Null means unavailable.
+const unavailableFinancials = Object.freeze({ balance: null, transactionCount: null, monthSpent: null, savings: null, trend: null, categories: null, transactions: null });
 
-  // Filter & Search states for All Transaction Report
-  const [dateFrom, setDateFrom] = useState("2026-10-12");
-  const [dateTo, setDateTo] = useState("2026-10-12");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [rowsPerPage, setRowsPerPage] = useState("50");
-  const [transactions] = useState([]);
+const formatAmount = (value) => value == null ? "—" : money.format(value);
+const formatCount = (value) => value == null ? "—" : count.format(Math.round(value));
+const enter = (reduced, order) => ({
+  initial: reduced ? false : { opacity: 0, y: 10 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: reduced ? 0 : .5, delay: reduced ? 0 : order * .045, ease: [0.22, 1, 0.36, 1] },
+});
 
+function Panel({ className = "", order = 0, reduced, children, ...props }) {
+  return <motion.section {...enter(reduced, order)} className={`ptg-panel ${className}`} {...props}>{children}</motion.section>;
+}
+function AnimatedValue({ value, format, reduced }) {
+  const [display, setDisplay] = useState(value);
   useEffect(() => {
-    let isMounted = true;
-    async function loadBackendData() {
-      const kycRes = await getKycStatus().catch(() => null);
-      if (isMounted && kycRes?.data) setKycData(kycRes.data);
-    }
-
-    loadBackendData();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  const rawStatus = String(kycData?.status || currentUser.kyc?.status || "pending").toLowerCase();
-  const isKycApproved = rawStatus === "approved" || rawStatus === "completed" || rawStatus === "verified";
-  const isKycUnderReview = rawStatus === "submitted" || rawStatus === "under_review";
-  const isKycPending = !isKycApproved && !isKycUnderReview;
-
-  const handleServiceClick = (name) => {
-    if (!isKycApproved) {
-      toast.error(`Service Locked: ${name} will activate once your KYC verification is approved by compliance.`);
+    const target = Number(value);
+    if (value == null || reduced || !Number.isFinite(target) || Math.abs(target) > Number.MAX_SAFE_INTEGER / 100) {
+      setDisplay(value);
       return;
     }
-    toast.info(`${name} is not enabled for PayTeam yet.`);
-  };
+    let frame;
+    const start = performance.now();
+    const tick = now => {
+      const progress = Math.min(1, (now - start) / 750);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setDisplay(progress === 1 ? value : target * eased);
+      if (progress < 1) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [value, reduced]);
+  // The animation is presentation-only; the exact final amount is available
+  // to assistive technology throughout. Unavailable data never counts from zero.
+  if (value == null) return "—";
+  return <><span aria-hidden="true">{format(reduced ? value : display ?? value)}</span><span className="ptg-sr">{format(value)}</span></>;
+}
+function Metric({ title, icon: Icon, value, format, caption, savings, order, reduced }) {
+  return <Panel reduced={reduced} order={order} className={`ptg-metric${savings ? " ptg-savings" : ""}`}>
+    <div className="ptg-metric-label"><Icon aria-hidden="true" /><h2>{title}</h2></div>
+    <strong className="ptg-metric-value"><AnimatedValue value={value} format={format} reduced={reduced} /></strong>
+    <p className="ptg-metric-caption">{caption}</p>
+  </Panel>;
+}
 
-  const handleFetchReport = () => {
-    toast.error(`Transaction records are not available for ${dateFrom} through ${dateTo}.`);
-  };
+// Adapted from the supplied GlassyDashboard's midpoint cubic interpolation.
+export function smoothPath(points) {
+  return points.reduce((path, [x, y], index) => {
+    if (index === 0) return `M ${x} ${y}`;
+    const [px, py] = points[index - 1];
+    const midpoint = (x + px) / 2;
+    return `${path} C ${midpoint} ${py}, ${midpoint} ${y}, ${x} ${y}`;
+  }, "");
+}
 
-  const handleExport = () => {
-    toast.error("No transaction records are available to export.");
-  };
-
-  const handleRefresh = () => {
-    toast.error("Transaction report refresh is not available yet.");
-  };
-
-  return (
-    <div className="space-y-7 max-w-7xl mx-auto pb-10">
-      {/* KYC Alert Status Banner */}
-      {isKycPending && (
-        <div className="bg-white border border-amber-200/90 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-2xs hover:shadow-sm transition-shadow">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center shrink-0">
-              <AlertCircle className="w-5 h-5 text-black" strokeWidth={2} />
-            </div>
-            <div>
-              <span className="font-bold text-slate-800 text-sm block">KYC Verification Incomplete</span>
-              <span className="text-slate-500 text-xs">
-                Complete your identity and business documentation to activate live counter collection and settlement services.
-              </span>
-            </div>
-          </div>
-          <Link
-            to="/user/kyc"
-            className="bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs px-5 py-2.5 rounded-xl transition shadow-2xs shrink-0 text-center"
-          >
-            Complete KYC
-          </Link>
-        </div>
-      )}
-
-      {isKycUnderReview && (
-        <div className="bg-white border border-blue-200/90 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-2xs hover:shadow-sm transition-shadow">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
-              <Clock className="w-5 h-5 text-black" strokeWidth={2} />
-            </div>
-            <div>
-              <span className="font-bold text-slate-800 text-sm block">KYC Under Compliance Review</span>
-              <span className="text-slate-500 text-xs">
-                Your onboarding documentation has been submitted and is currently being verified. Payout services will activate once approved.
-              </span>
-            </div>
-          </div>
-          <Link
-            to="/user/kyc"
-            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-5 py-2.5 rounded-xl transition shadow-2xs shrink-0 text-center"
-          >
-            View Application
-          </Link>
-        </div>
-      )}
-
-      {/* Dashboard Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <h1 className="text-xl font-bold text-slate-900 tracking-tight">Dashboard</h1>
+function TrendChart({ series, reduced }) {
+  const fillId = `ptg-area-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  const [selected, setSelected] = useState(null);
+  const hasData = Array.isArray(series) && series.length >= 2 && series.every(item => typeof item.label === "string" && Number.isFinite(item.amount) && item.amount >= 0);
+  const width = 600, height = 150;
+  const peak = hasData ? Math.max(1, ...series.map(item => item.amount)) * 1.12 : 1;
+  const magnitude = 10 ** Math.floor(Math.log10(peak / 3));
+  const step = Math.ceil(peak / 3 / magnitude) * magnitude;
+  const ceiling = hasData ? step * 3 : 1;
+  const points = hasData ? series.map((item, index) => [index * width / (series.length - 1), height - item.amount / ceiling * height]) : [];
+  const path = smoothPath(points);
+  const active = hasData && selected !== null ? points[selected] : null;
+  const ticks = [1, 2 / 3, 1 / 3, 0];
+  const compact = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", notation: "compact", maximumFractionDigits: 1 });
+  return <figure className="ptg-trend" aria-label="Transaction amounts over time">
+    <div className="ptg-chart-axis" aria-hidden="true">{ticks.map((tick, i) => <span key={i}>{hasData ? compact.format(ceiling * tick) : "—"}</span>)}</div>
+    <div className="ptg-chart-body">
+      <div className="ptg-chart-plot" onMouseLeave={() => setSelected(null)}>
+        <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" aria-hidden="true">
+          <defs><linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#1688ff" stopOpacity=".45" /><stop offset="1" stopColor="#1688ff" stopOpacity=".025" /></linearGradient></defs>
+          {ticks.map((_, index) => <line key={index} x1="0" x2={width} y1={height * index / 3} y2={height * index / 3} className="ptg-grid-line" />)}
+          {hasData && <g className={reduced ? "" : "ptg-line-reveal"}><path d={`${path} L ${width} ${height} H 0 Z`} fill={`url(#${fillId})`} /><path d={path} fill="none" stroke="#0879f9" strokeWidth="2.8" vectorEffect="non-scaling-stroke" strokeLinecap="round" /></g>}
+          {active && <><line x1={active[0]} x2={active[0]} y1={active[1]} y2={height} stroke="#1475ed" strokeDasharray="3 3" /><circle cx={active[0]} cy={active[1]} r="4" fill="#0879f9" stroke="white" strokeWidth="1.4" /></>}
+        </svg>
+        {hasData ? <><div className="ptg-chart-zones">{series.map((item, index) => <button key={index} type="button" aria-label={`${item.label}: ${money.format(item.amount)}`} onFocus={() => setSelected(index)} onBlur={() => setSelected(null)} onMouseEnter={() => setSelected(index)} onClick={() => setSelected(index)} />)}</div>{active && <span className="ptg-chart-tooltip" style={{ "--ptg-point": `${selected / (series.length - 1) * 100}%` }}>{money.format(series[selected].amount)}</span>}</> : <div className="ptg-chart-empty"><History aria-hidden="true" /><strong>Transaction data unavailable</strong><span>Payment reporting is not enabled yet.</span></div>}
       </div>
-
-      {/* ── Wallet Cards Row with Background Watermark Icons ─────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-        {/* Main Wallet */}
-        <div className="relative overflow-hidden bg-blue-50/60 rounded-2xl p-6 border border-blue-100/80 shadow-2xs hover:shadow-md hover:-translate-y-0.5 transition-all group">
-          {/* Watermark Icon */}
-          <Wallet className="absolute -right-3 -bottom-3 w-24 h-24 text-blue-200/40 rotate-12 pointer-events-none group-hover:scale-110 transition-transform" strokeWidth={1} />
-          <span className="text-xs font-semibold text-slate-500 block">Main Wallet</span>
-          <div className="flex items-center gap-3 mt-3">
-            <span className="text-3xl font-bold text-slate-900 tracking-tight">₹ 0.00</span>
-            <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-lg text-xs font-semibold bg-blue-100 text-blue-600">
-              <ArrowUpRight className="w-3 h-3 text-black" />
-              59.3%
-            </span>
-          </div>
-          <p className="text-xs text-slate-400 mt-3">
-            You made an extra <span className="text-blue-500 font-medium">35k</span> this year
-          </p>
-        </div>
-
-        {/* Settlement Wallet */}
-        <div className="relative overflow-hidden bg-amber-50/60 rounded-2xl p-6 border border-amber-100/80 shadow-2xs hover:shadow-md hover:-translate-y-0.5 transition-all group">
-          <Landmark className="absolute -right-3 -bottom-3 w-24 h-24 text-amber-200/40 rotate-12 pointer-events-none group-hover:scale-110 transition-transform" strokeWidth={1} />
-          <span className="text-xs font-semibold text-slate-500 block">Settlement Wallet</span>
-          <div className="flex items-center gap-3 mt-3">
-            <span className="text-3xl font-bold text-slate-900 tracking-tight">₹ 0.00</span>
-            <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-lg text-xs font-semibold bg-amber-100 text-amber-600">
-              <ArrowUpRight className="w-3 h-3 text-black" />
-              27.4%
-            </span>
-          </div>
-          <p className="text-xs text-slate-400 mt-3">
-            You made an extra <span className="text-amber-500 font-medium">1,943</span> this year
-          </p>
-        </div>
-
-        {/* UPI Wallet */}
-        <div className="relative overflow-hidden bg-purple-50/60 rounded-2xl p-6 border border-purple-100/80 shadow-2xs hover:shadow-md hover:-translate-y-0.5 transition-all group">
-          <Smartphone className="absolute -right-3 -bottom-3 w-24 h-24 text-purple-200/40 rotate-12 pointer-events-none group-hover:scale-110 transition-transform" strokeWidth={1} />
-          <span className="text-xs font-semibold text-slate-500 block">UPI Wallet</span>
-          <div className="flex items-center gap-3 mt-3">
-            <span className="text-3xl font-bold text-slate-900 tracking-tight">₹ 0.00</span>
-            <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-lg text-xs font-semibold bg-purple-100 text-purple-600">
-              <ArrowUpRight className="w-3 h-3 text-black" />
-              70.5%
-            </span>
-          </div>
-          <p className="text-xs text-slate-400 mt-3">
-            You made an extra <span className="text-purple-500 font-medium">8.9k</span> this year
-          </p>
-        </div>
-      </div>
-
-      {/* ── Services Section ─────────────────────────────────────── */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-bold text-slate-900">Services</h2>
-          <button
-            type="button"
-            className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg transition cursor-pointer"
-            title="Service options"
-          >
-            <MoreHorizontal className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-          {/* Service 1: Payout */}
-          <div
-            onClick={() => handleServiceClick("Payout")}
-            className="bg-blue-50/50 border border-blue-100/90 rounded-2xl p-6 flex items-center justify-between shadow-2xs hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer group"
-          >
-            <div>
-              <h3 className="text-base font-bold text-slate-900">Payout</h3>
-              <p className="text-xs text-slate-400 mt-1.5">Instant Transfer</p>
-            </div>
-            <div className="w-14 h-14 rounded-2xl bg-white shadow-sm border border-blue-100/80 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <Send className="w-6 h-6 text-black" strokeWidth={2} />
-            </div>
-          </div>
-
-          {/* Service 2: Credit Card 2 */}
-          <div
-            onClick={() => handleServiceClick("Credit Card 2")}
-            className="bg-rose-50/50 border border-rose-100/90 rounded-2xl p-6 flex items-center justify-between shadow-2xs hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer group"
-          >
-            <div>
-              <h3 className="text-base font-bold text-slate-900">Credit Card 2</h3>
-              <p className="text-xs text-slate-400 mt-1.5">Bill Payments</p>
-            </div>
-            <div className="w-14 h-14 rounded-2xl bg-white shadow-sm border border-rose-100/80 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <CreditCard className="w-6 h-6 text-black" strokeWidth={2} />
-            </div>
-          </div>
-
-          {/* Service 3: Rupay UPI */}
-          <div
-            onClick={() => handleServiceClick("Rupay UPI")}
-            className="bg-amber-50/50 border border-amber-100/90 rounded-2xl p-6 flex items-center justify-between shadow-2xs hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer group"
-          >
-            <div>
-              <h3 className="text-base font-bold text-slate-900">Rupay UPI</h3>
-              <p className="text-xs text-slate-400 mt-1.5">UPI Collection</p>
-            </div>
-            <div className="w-14 h-14 rounded-2xl bg-white shadow-sm border border-amber-100/80 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <QrCode className="w-6 h-6 text-black" strokeWidth={2} />
-            </div>
-          </div>
-
-          {/* Service 4: Add Money */}
-          <div
-            onClick={() => handleServiceClick("Add Money")}
-            className="bg-purple-50/50 border border-purple-100/90 rounded-2xl p-6 flex items-center justify-between shadow-2xs hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer group"
-          >
-            <div>
-              <h3 className="text-base font-bold text-slate-900">Add Money</h3>
-              <p className="text-xs text-slate-400 mt-1.5">Money Collection</p>
-            </div>
-            <div className="w-14 h-14 rounded-2xl bg-white shadow-sm border border-purple-100/80 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <Zap className="w-6 h-6 text-black" strokeWidth={2} />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Business Overview — Stats with bar chart ─────────────── */}
-      <div className="space-y-4">
-        <h2 className="text-base font-bold text-slate-900">Business Overview</h2>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          {/* Today Business */}
-          <div className="bg-emerald-50/60 rounded-2xl p-5 border border-emerald-100/80 shadow-2xs hover:shadow-md hover:-translate-y-0.5 transition-all">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0">
-                <Calendar className="w-5 h-5 text-black" strokeWidth={2} />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-slate-800">Today Business</h4>
-                <p className="text-[11px] text-slate-400">Today's Collection</p>
-              </div>
-            </div>
-            <div className="flex items-end gap-1 h-11 mb-3">
-              {[20, 35, 15, 45, 30, 50, 10].map((h, i) => (
-                <div key={i} className="flex-1 rounded-t transition-all" style={{ height: `${h}%`, backgroundColor: i === 6 ? "#10b981" : "#d1fae5" }} />
-              ))}
-            </div>
-            <span className="text-xl font-bold text-emerald-600">₹0</span>
-          </div>
-
-          {/* This Month */}
-          <div className="bg-blue-50/60 rounded-2xl p-5 border border-blue-100/80 shadow-2xs hover:shadow-md hover:-translate-y-0.5 transition-all">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center shrink-0">
-                <BarChart2 className="w-5 h-5 text-black" strokeWidth={2} />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-slate-800">This Month</h4>
-                <p className="text-[11px] text-slate-400">Current Month Business</p>
-              </div>
-            </div>
-            <div className="flex items-end gap-1 h-11 mb-3">
-              {[30, 55, 40, 60, 45].map((h, i) => (
-                <div key={i} className="flex-1 rounded-t transition-all" style={{ height: `${h}%`, backgroundColor: i === 4 ? "#3b82f6" : "#dbeafe" }} />
-              ))}
-            </div>
-            <span className="text-xl font-bold text-blue-600">₹0</span>
-          </div>
-
-          {/* Last Month */}
-          <div className="bg-amber-50/60 rounded-2xl p-5 border border-amber-100/80 shadow-2xs hover:shadow-md hover:-translate-y-0.5 transition-all">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
-                <BarChart3 className="w-5 h-5 text-black" strokeWidth={2} />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-slate-800">Last Month</h4>
-                <p className="text-[11px] text-slate-400">Previous Month Business</p>
-              </div>
-            </div>
-            <div className="flex items-end gap-1 h-11 mb-3">
-              {[45, 35, 60, 50, 40].map((h, i) => (
-                <div key={i} className="flex-1 rounded-t transition-all" style={{ height: `${h}%`, backgroundColor: i === 2 ? "#f59e0b" : "#fef3c7" }} />
-              ))}
-            </div>
-            <span className="text-xl font-bold text-amber-600">₹0</span>
-          </div>
-
-          {/* This Year */}
-          <div className="bg-rose-50/60 rounded-2xl p-5 border border-rose-100/80 shadow-2xs hover:shadow-md hover:-translate-y-0.5 transition-all">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center shrink-0">
-                <TrendingUp className="w-5 h-5 text-black" strokeWidth={2} />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-slate-800">This Year</h4>
-                <p className="text-[11px] text-slate-400">Yearly Business Growth</p>
-              </div>
-            </div>
-            <div className="flex items-end gap-1 h-11 mb-3">
-              {[25, 40, 55, 70].map((h, i) => (
-                <div key={i} className="flex-1 rounded-t transition-all" style={{ height: `${h}%`, backgroundColor: i === 3 ? "#f43f5e" : "#fecdd3" }} />
-              ))}
-            </div>
-            <span className="text-xl font-bold text-rose-600">₹0</span>
-          </div>
-        </div>
-      </div>
-
-      {/* ── All Transaction Report ───────────────────────────────── */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden hover:shadow-sm transition-shadow">
-        {/* Header with Date Pickers and Fetch Button */}
-        <div className="p-5 sm:p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h3 className="text-base font-bold text-slate-900">All Transaction Report</h3>
-            <p className="text-xs text-slate-400 mt-1">
-              {transactions.length} total records
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-1.5 text-xs text-slate-500">
-              <span>From</span>
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:border-blue-500"
-              />
-            </div>
-            <div className="flex items-center gap-1.5 text-xs text-slate-500">
-              <span>To</span>
-              <input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:border-blue-500"
-              />
-            </div>
-            <button
-              onClick={handleFetchReport}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-5 py-2 rounded-xl transition shadow-2xs flex items-center gap-1.5 cursor-pointer"
-            >
-              Fetch
-            </button>
-          </div>
-        </div>
-
-        {/* Search & Action Toolbar */}
-        <div className="p-4 sm:p-5 bg-slate-50/40 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search (press Enter)..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-500"
-            />
-          </div>
-
-          <div className="flex items-center gap-2.5 flex-wrap text-xs">
-            <span className="px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200/80 font-bold rounded-xl text-xs">
-              ₹ 0
-            </span>
-            <button
-              onClick={handleExport}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl font-semibold transition cursor-pointer hover:shadow-sm"
-            >
-              <Download className="w-4 h-4 text-black" />
-              <span>Export</span>
-            </button>
-            <button
-              onClick={handleRefresh}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl font-semibold transition cursor-pointer hover:shadow-sm"
-            >
-              <RefreshCw className="w-4 h-4 text-black" />
-              <span>Refresh</span>
-            </button>
-            <button
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl font-semibold transition cursor-pointer hover:shadow-sm"
-            >
-              <Filter className="w-4 h-4 text-black" />
-              <span>Filters</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Transaction Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="bg-slate-50/80 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-100">
-                <th className="py-3.5 px-5 font-bold">DATE</th>
-                <th className="py-3.5 px-5 font-bold">USER DETAILS</th>
-                <th className="py-3.5 px-5 font-bold">TRANSACTION DETAILS</th>
-                <th className="py-3.5 px-5 font-bold">REFERENCE DETAILS</th>
-                <th className="py-3.5 px-5 font-bold">AMOUNT</th>
-                <th className="py-3.5 px-5 font-bold">STATUS</th>
-                <th className="py-3.5 px-5 font-bold text-center"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-slate-700">
-              {transactions.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-14 text-center text-slate-400 font-medium text-sm">
-                    No transactions found for selected filters
-                  </td>
-                </tr>
-              ) : (
-                transactions.map((tx, idx) => (
-                  <tr key={idx} className="hover:bg-blue-50/30 transition-colors">
-                    <td className="py-3.5 px-5 whitespace-nowrap text-slate-600">
-                      <div>{tx.id || "43695"}</div>
-                      <div className="text-[11px] text-slate-400">{tx.date || "12/10/26"}</div>
-                      <div className="text-[11px] text-slate-400">{tx.time || "16:21"}</div>
-                    </td>
-                    <td className="py-3.5 px-5 text-slate-800">
-                      <div className="font-semibold">{tx.userName || "Chauhan Meet (1524)"}</div>
-                      <div className="text-[11px] text-slate-400">{tx.userMobile || "7738647711"}</div>
-                      <div className="text-[11px] text-blue-600 font-semibold">{tx.userRole || "Retailer"}</div>
-                    </td>
-                    <td className="py-3.5 px-5 text-slate-600">
-                      <div>Name: {tx.name || "Chauhan Meet"}</div>
-                      <div className="text-[11px] text-slate-400">Mob: {tx.mobile || "7738647711"} | Mode: NA</div>
-                      <div className="text-[11px] text-slate-400">CC No: NA</div>
-                    </td>
-                    <td className="py-3.5 px-5 text-slate-600">
-                      <div className="font-mono text-[11px]">TXN ID: {tx.txnId || "T15241791802270865"}</div>
-                      <div className="text-[11px] text-slate-400">UTR: NA</div>
-                      <div className="text-[11px] text-slate-500">Product: {tx.product || "Diamond 3"}</div>
-                    </td>
-                    <td className="py-3.5 px-5 text-slate-800 font-medium">
-                      <div>Amount: {tx.amount || "995"}</div>
-                      <div className="text-[11px] text-slate-400">Charge: 0</div>
-                      <div className="text-[11px] text-slate-400">Opening: 0 | Closing: 0</div>
-                    </td>
-                    <td className="py-3.5 px-5">
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-600">
-                        {tx.status || "Pending"}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-5 text-center">
-                      <button className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg cursor-pointer hover:bg-slate-50 transition">
-                        <MoreHorizontal className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Table Pagination Footer */}
-        <div className="p-4 sm:p-5 bg-white border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-500">
-          <span>
-            Page 1 of {Math.max(1, transactions.length)} records
-          </span>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-1.5">
-              <span>Rows per page:</span>
-              <select
-                value={rowsPerPage}
-                onChange={(e) => setRowsPerPage(e.target.value)}
-                className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs text-slate-700 focus:outline-none"
-              >
-                <option value="50">50</option>
-                <option value="25">25</option>
-                <option value="10">10</option>
-              </select>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                disabled
-                className="p-1.5 text-slate-300 disabled:opacity-40 cursor-not-allowed"
-                title="Previous page"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <span>{transactions.length > 0 ? `1-${transactions.length} of ${transactions.length}` : "0-0 of 0"}</span>
-              <button
-                disabled
-                className="p-1.5 text-slate-300 disabled:opacity-40 cursor-not-allowed"
-                title="Next page"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom All Rights Reserved */}
-      <div className="text-left text-xs text-slate-400 pt-2">
-        © All rights reserved
-      </div>
+      <div className="ptg-chart-months" aria-hidden="true">{hasData ? series.map((item, index) => <span key={index}>{item.label}</span>) : <span>Transaction history</span>}</div>
     </div>
-  );
+  </figure>;
+}
+
+function MonthSummary({ categories, total, reduced }) {
+  const maskId = `ptg-ring-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  const [active, setActive] = useState(null);
+  const hasData = Array.isArray(categories) && categories.length === spendingCategories.length && categories.every(value => Number.isFinite(value) && value >= 0) && categories.some(value => value > 0);
+  const sum = hasData ? categories.reduce((a, b) => a + b, 0) : 0;
+  const shares = hasData ? categories.map(value => value / sum * 100) : [];
+  return <>
+    <div className="ptg-donut" role="img" aria-label={hasData ? `Monthly spending ${formatAmount(total)}` : "Monthly spending data unavailable"}>
+      <svg viewBox="0 0 200 200" aria-hidden="true">
+        <defs><mask id={maskId}><circle className={hasData && !reduced ? "ptg-donut-reveal" : ""} cx="100" cy="100" r="82" fill="none" stroke="white" strokeWidth="31" pathLength="100" strokeDasharray="100 0" transform="rotate(-90 100 100)" /></mask>{spendingCategories.map(({ color }, index) => <linearGradient key={index} id={`${maskId}-${index}`} x1="0" y1="0" x2="1" y2="1"><stop stopColor={color} /><stop offset="1" stopColor={color} stopOpacity=".8" /></linearGradient>)}</defs>
+        <circle cx="100" cy="100" r="82" fill="none" stroke="var(--ptg-track)" strokeWidth="29" />
+        {hasData && <g mask={`url(#${maskId})`} transform="rotate(-90 100 100)">{shares.map((share, index) => <circle key={index} cx="100" cy="100" r="82" fill="none" stroke={`url(#${maskId}-${index})`} strokeWidth="29" pathLength="100" strokeDasharray={`${Math.max(0, share - .35)} 100`} strokeDashoffset={-shares.slice(0, index).reduce((a, b) => a + b, 0)} className="ptg-donut-segment" opacity={active === null || active === index ? 1 : .35} />)}</g>}
+        <circle cx="100" cy="100" r="97" fill="none" stroke="rgba(255,255,255,.85)" strokeWidth="1.2" /><circle cx="100" cy="100" r="67" fill="none" stroke="rgba(255,255,255,.72)" strokeWidth="1.2" />
+      </svg>
+      <div className="ptg-donut-center"><strong>{active !== null && hasData ? money.format(categories[active]) : formatAmount(total)}</strong><span>{active !== null && hasData ? spendingCategories[active].label : "Total Spent"}</span></div>
+    </div>
+    <div className="ptg-category-list">{spendingCategories.map(({ label, color }, index) => {
+      const row = <><i aria-hidden="true" style={{ "--ptg-category": color }} /><span>{label}</span><strong>{hasData ? `${Number(shares[index].toFixed(1))}%` : "—"}</strong></>;
+      return hasData ? <button type="button" key={label} aria-pressed={active === index} onClick={() => setActive(active === index ? null : index)}>{row}</button> : <div key={label}>{row}</div>;
+    })}</div>
+  </>;
+}
+
+function KycNotice({ kyc, retryKyc }) {
+  if (kyc.status === "approved" || kyc.status === "loading") return null;
+  const review = ["submitted", "under_review"].includes(kyc.status);
+  const error = kyc.status === "error";
+  const title = error ? "KYC status unavailable" : review ? "KYC application under review" : kyc.status === "rejected" ? "Your KYC application needs attention" : "Complete your identity verification";
+  return <div className="ptg-kyc-notice" role="status"><span className="ptg-notice-icon">{review ? <Clock /> : <ShieldAlert />}</span><div><strong>{title}</strong><p>{error ? "We could not verify your status. Payments remain unavailable." : review ? "You can check the progress of your application." : "Complete the required steps to become eligible for payment services."}</p></div>{error ? <button className="ptg-pill" type="button" onClick={retryKyc}><RefreshCw /> Retry</button> : <Link className="ptg-pill" to="/kyc">View KYC <ArrowRight /></Link>}</div>;
+}
+
+// Financial view model is deliberately separated from the visual layer so a future
+// authorized read-only API can supply real values without changing the layout.
+export function DashboardContent({ financials = unavailableFinancials, kyc, retryKyc, openAction }) {
+  const reduced = useReducedMotion();
+  const f = financials;
+  return <div className="ptg-dashboard" data-kyc-approved={kyc.status === "approved"}>
+    <h1 className="ptg-sr">Customer dashboard</h1>
+    <KycNotice kyc={kyc} retryKyc={retryKyc} />
+    <div className="ptg-metrics">
+      <Panel reduced={reduced} order={0} className="ptg-wallet" id="wallet" tabIndex={-1}>
+        <div className="ptg-wallet-copy"><div className="ptg-metric-label"><Wallet aria-hidden="true" /><h2>Wallet Balance</h2></div><strong className="ptg-wallet-value"><AnimatedValue value={f.balance} format={formatAmount} reduced={reduced} /></strong>{f.balance == null && <p className="ptg-wallet-caption">Balance unavailable</p>}</div>
+        <button type="button" className="ptg-add-money" onClick={() => openAction("addMoney")}><Plus aria-hidden="true" /> Add Money</button>
+      </Panel>
+      <Metric reduced={reduced} order={1} title="Total Transactions" icon={ArrowDownUp} value={f.transactionCount} format={formatCount} caption={f.transactionCount == null ? "Data unavailable" : "All recorded transactions"} />
+      <Metric reduced={reduced} order={2} title="This Month Spent" icon={IndianRupee} value={f.monthSpent} format={formatAmount} caption={f.monthSpent == null ? "Data unavailable" : "This month"} />
+      <Metric reduced={reduced} order={3} title="Total Savings" icon={Gift} savings value={f.savings} format={formatAmount} caption={f.savings == null ? "Data unavailable" : "Recorded savings"} />
+    </div>
+    <div className="ptg-dashboard-grid">
+      <Panel className="ptg-trends-panel" reduced={reduced} order={4}><header className="ptg-panel-head"><div><h2>Transaction Trends</h2><p>Your transaction amount over time</p></div></header><TrendChart series={f.trend} reduced={reduced} /></Panel>
+      <Panel className="ptg-month-panel" reduced={reduced} order={5}><header className="ptg-panel-head"><ChartNoAxesColumnIncreasing className="ptg-summary-icon" aria-hidden="true" /><div><h2>This Month Summary</h2><p>Your spending by service category</p></div></header><MonthSummary categories={f.categories} total={f.monthSpent} reduced={reduced} /></Panel>
+      <Panel className="ptg-services-panel" id="services" tabIndex={-1} reduced={reduced} order={6}><header className="ptg-panel-head"><LayoutGrid aria-hidden="true" /><div><h2>Quick Services</h2><p>Pay, recharge and manage your bills</p></div><button className="ptg-pill" type="button" onClick={() => openAction("services")}>View All Services <ArrowRight aria-hidden="true" /></button></header>
+        <div className="ptg-service-grid">{quickServices.map(({ name, icon: Icon, color }) => <button key={name} id={"service-" + name} type="button" onClick={() => openAction("service", name)} className="ptg-service" aria-label={`${name} — currently unavailable`}><Icon aria-hidden="true" style={{ color: serviceColors[color] }} /><span>{name}</span></button>)}</div>
+      </Panel>
+    </div>
+    <Panel className="ptg-transactions-panel" id="transactions" tabIndex={-1} reduced={reduced} order={7}>
+      <header className="ptg-panel-head"><History aria-hidden="true" /><div><h2>Recent Transactions</h2><p>Your latest payment activities</p></div><button className="ptg-pill" type="button" onClick={() => openAction("transactions")}>View All Transactions <ArrowUpRight aria-hidden="true" /></button></header>
+      <div className="ptg-table-scroll"><table><thead><tr><th scope="col">Date &amp; Time</th><th scope="col">Service</th><th scope="col">Description</th><th scope="col">Amount</th><th scope="col">Status</th></tr></thead><tbody>
+        {Array.isArray(f.transactions) && f.transactions.length ? f.transactions.slice(0, 3).map((row, index) => <tr key={row.id ?? index}><td>{row.date}</td><td><span className="ptg-table-service">{quickServices.filter(item => item.name === row.service).map(({ icon: Icon, color }) => <Icon key={row.service} aria-hidden="true" style={{ color: serviceColors[color] }} />)}{row.service}</span></td><td>{row.description}</td><td className="ptg-amount">{formatAmount(row.amount)}</td><td><span className="ptg-status" data-status={row.status}>{row.status === "Successful" && <Check aria-hidden="true" />}{row.status}</span></td></tr>) : <tr><td colSpan={5} className="ptg-table-empty"><History aria-hidden="true" /><strong>{Array.isArray(f.transactions) ? "No transactions yet" : "Transaction history unavailable"}</strong><span>{Array.isArray(f.transactions) ? "Your payments will appear here." : "Transaction reporting is not enabled yet."}</span></td></tr>}
+      </tbody></table></div>
+    </Panel>
+  </div>;
+}
+
+async function loadKyc(signal) {
+  const { data } = await getKycStatus(signal);
+  return interpretKycStatus(data);
+}
+
+export default function UserDashboard() {
+  const result = useDashboardMetric(loadKyc, 60000);
+  const status = result.failed || result.stale ? "error" : result.loading ? "loading" : result.data?.view === "approved" ? "approved" : result.data?.status || "error";
+  const kyc = { status };
+  const [action, setAction] = useState(null);
+  const location = useLocation();
+  useEffect(() => {
+    // The shared workspace search also contains services outside the six tiles.
+    // Open an unavailable-service notice rather than leaving those links inert.
+    let name;
+    try {
+      const hash = decodeURIComponent(location.hash.slice(1));
+      if (hash.startsWith("service-")) name = hash.slice(8);
+    } catch { /* Ignore malformed hashes. */ }
+    const extra = name && services.some(service => service.name === name) && !quickServices.some(service => service.name === name);
+    setAction(extra ? { kind: "service", name } : null);
+  }, [location.pathname, location.hash]);
+  const openAction = (kind, name) => setAction({ kind, name });
+  const close = () => setAction(null);
+  const title = action?.kind === "addMoney" ? "Add Money" : action?.kind === "services" ? "Payment services" : action?.kind === "transactions" ? "Transaction history" : action?.name;
+  return <>
+    <DashboardContent kyc={kyc} retryKyc={result.retry} openAction={openAction} />
+    {action && <FormDialog title={title} close={close}>
+      <div className="ptg-dialog-inner">
+        <header><h2>{title}</h2><button className="gw-round" type="button" aria-label="Close dialog" onClick={close}><X size={18}/></button></header>
+        {action.kind === "services" ? <div className="ptg-dialog-list">{services.map(({name, icon: Icon, color}) => <button key={name} type="button" className="ptg-dialog-row" onClick={() => openAction("service", name)}><Icon style={{color:serviceColors[color]}}/><span>{name}</span><small>Unavailable</small></button>)}</div> : <>
+          <p>{action.kind === "transactions" ? "The payment ledger is not connected yet. Transaction history is unavailable." : status === "approved" ? "This payment capability is not enabled yet. No money will be moved." : status === "loading" || status === "error" ? "Your verification status could not be confirmed. Payments remain unavailable." : "Payment services require KYC approval, scheme eligibility and an enabled payment integration."}</p>
+          {action.kind !== "transactions" && status !== "approved" && status !== "loading" && status !== "error" && <Link className="ptg-pill" to="/kyc" onClick={close}>View KYC <ArrowRight/></Link>}
+          <button className="ptg-pill" type="button" onClick={close}>Close</button>
+        </>}
+      </div>
+    </FormDialog>}
+  </>;
 }

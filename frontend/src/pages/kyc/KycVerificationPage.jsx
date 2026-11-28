@@ -19,7 +19,6 @@ import { isAdminRole } from "../../constants/roles";
 import { getCurrentUser } from "../../api/auth.api";
 
 // Reusable White-Theme Components
-import KycHeader from "../../features/kyc/components/KycHeader";
 import KycStepper from "../../features/kyc/components/KycStepper";
 import Step1BasicDetails from "../../features/kyc/components/Step1BasicDetails";
 import Step2AadhaarAuth from "../../features/kyc/components/Step2AadhaarAuth";
@@ -123,7 +122,6 @@ export function KycVerificationPage() {
     shop: { status: "idle", name: "", error: null },
   });
 
-  const [savedDraftTime, setSavedDraftTime] = useState("Just now");
 
   const [formData, setFormData] = useState({
     fullName: storedUser?.name || "",
@@ -1198,17 +1196,9 @@ toast.success("Bank details saved successfully.");
 
   return (
     <div className="min-h-screen bg-[#f8fafc] text-slate-800 font-sans selection:bg-blue-600 selection:text-white">
-      {/* Header */}
-      <KycHeader
-        savedDraftTime={savedDraftTime}
-        onSaveDraft={() => {
-          setSavedDraftTime("Just now");
-          toast.success("Progress saved");
-        }}
-        onLogout={handleLogout}
-      />
+      <h1 className="text-xl font-bold">Complete your KYC</h1>
 
-      <main className="max-w-6xl mx-auto px-4 py-6 md:py-8">
+      <div className="max-w-6xl mx-auto px-4 py-6 md:py-8">
         {/* Stepper Progress */}
         <KycStepper
           steps={steps}
@@ -1402,7 +1392,7 @@ toast.success("Bank details saved successfully.");
             Protected by TLS encryption • Data processed in strict accordance with the Reserve Bank of India (RBI) Master Direction on KYC.
           </span>
         </div>
-      </main>
+      </div>
     </div>
   );
 }

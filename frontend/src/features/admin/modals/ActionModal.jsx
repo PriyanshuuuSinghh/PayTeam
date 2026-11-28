@@ -1,3 +1,4 @@
+import FormDialog from "../../../components/workspace/FormDialog";
 import React, { useState, useEffect } from 'react';
 import { Settings, X, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -147,20 +148,21 @@ export function ActionModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+    <FormDialog title="Edit customer details" close={handleClose}>
       <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-lg p-6 animate-in fade-in zoom-in-95 max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center pb-3 border-b border-slate-100">
           <div>
             <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-              <Settings className="w-5 h-5 text-slate-700" /> Edit Agent Configuration
+              <Settings className="w-5 h-5 text-slate-700" /> Edit customer details
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Updates record #{actionModalUser.id} directly in MySQL database
+              Customer account #{actionModalUser.id}
             </p>
           </div>
           <button
             type="button"
             onClick={handleClose}
+            aria-label="Close dialog"
             disabled={isLoading}
             className="text-slate-400 hover:text-slate-600 transition-colors cursor-pointer p-1 rounded-lg hover:bg-slate-100 disabled:opacity-50"
           >
@@ -316,7 +318,7 @@ export function ActionModal({
           </div>
         </form>
       </div>
-    </div>
+    </FormDialog>
   );
 }
 

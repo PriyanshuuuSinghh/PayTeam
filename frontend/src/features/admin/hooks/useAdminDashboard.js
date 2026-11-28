@@ -7,16 +7,13 @@ import {
   updateBackendUser
 } from '../services/adminApi';
 
-export function useAdminDashboard() {
-  // Navigation State
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-
+export function useAdminDashboard(directoryOpen) {
   // Real Database Users State
   const [users, setUsers] = useState([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
   const [lastUserLoad, setLastUserLoad] = useState(null);
   const [userLoadError, setUserLoadError] = useState(null);
+  const [rolesUnavailable, setRolesUnavailable] = useState(false);
   const [permittedRoles, setPermittedRoles] = useState([]);
   const [selectedRoleId, setSelectedRoleId] = useState("");
   const userLoadRequestRef = useRef(0);
@@ -61,24 +58,18 @@ export function useAdminDashboard() {
   }, []);
 
   useEffect(() => {
+    if (!directoryOpen) return;
     let mounted = true;
     fetchBackendDescendantRoles().then((response) => {
       const roles = Array.isArray(response?.data) ? response.data : [];
       if (!mounted) return;
+      setRolesUnavailable(false);
       setPermittedRoles(roles);
     }).catch(() => {
-      if (mounted) {
-        toast.error("Unable to load permitted role directories");
-        if (import.meta.env.DEV) {
-          console.warn("Permitted role directory request failed", {
-            method: "GET",
-            endpoint: "/api/users/roles/descendants",
-          });
-        }
-      }
+      if (mounted) setRolesUnavailable(true);
     });
     return () => { mounted = false; };
-  }, []);
+  }, [directoryOpen]);
 
   // Current active view heading helper
   const getCurrentRoleTitle = useCallback(() => {
@@ -160,7 +151,7 @@ export function useAdminDashboard() {
       } catch (err) {
         const errMsg =
           err.response?.data?.message || err.message || 'Failed to update agent details';
-        toast.error(errMsg);
+        throw new Error(errMsg);
       }
     },
     []
@@ -200,10 +191,7 @@ export function useAdminDashboard() {
     permittedRoles,
     selectedRoleId,
     setSelectedRoleId,
-    sidebarCollapsed,
-    setSidebarCollapsed,
-    mobileSidebarOpen,
-    setMobileSidebarOpen,
+    rolesUnavailable,
     getCurrentRoleTitle,
 
     // Real Data & Stats
