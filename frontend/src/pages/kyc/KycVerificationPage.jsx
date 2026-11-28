@@ -665,6 +665,17 @@ export function KycVerificationPage() {
 
   // Step 2: Trigger Aadhaar DigiLocker Verification
   const handleTriggerOtp = async () => {
+    // Create the browsing context during the user's click. Opening it only
+    // after the API round trip is commonly blocked by browser popup policies.
+    const popup = window.open("", "payteam-digilocker", "width=520,height=680,location=yes,status=yes");
+    if (!popup) {
+      setAadhaarErrorMessage("Your browser blocked the DigiLocker window. Allow popups for PayTeam and try again.");
+      toast.error("Allow popups for PayTeam to continue to DigiLocker.");
+      return;
+    }
+    popupWindowRef.current = popup;
+    popup.document.title = "Connecting to DigiLocker…";
+
     setIsInitiatingDigilocker(true);
     setAadhaarErrorMessage("");
     try {
@@ -682,9 +693,9 @@ export function KycVerificationPage() {
       setAadhaarVerified(false);
 
       if (authUrl) {
-        // Securely open popup window and store ref
-        const popup = window.open(authUrl, "_blank", "width=520,height=680,location=no,status=no");
-        popupWindowRef.current = popup;
+        // The backend accepts only the configured IDTO authorization host and
+        // binds the returned state to this authenticated KYC session.
+        popup.location.replace(authUrl);
         toast.success("DigiLocker window opened. Please complete OTP authentication on the official portal.", { duration: 6000 });
 
         // Auto-poll in background
@@ -723,6 +734,7 @@ export function KycVerificationPage() {
           }, 600000);
         }
       } else {
+        popup.close();
         toast.info("Aadhaar OTP requested. Please enter the OTP received on your mobile.");
       }
     } catch (err) {
@@ -756,6 +768,7 @@ export function KycVerificationPage() {
           }
         } catch {}
       } else {
+        popup.close();
         setSessionStatus("failed");
         setAadhaarErrorMessage(parsed.message || "Failed to initiate UIDAI session.");
         toast.error(parsed.message || "Failed to initiate UIDAI Aadhaar session.");

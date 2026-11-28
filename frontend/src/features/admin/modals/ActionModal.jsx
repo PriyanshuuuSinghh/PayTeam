@@ -149,7 +149,7 @@ export function ActionModal({
 
   return (
     <FormDialog title="Edit customer details" close={handleClose}>
-      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-lg p-6 animate-in fade-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+      <div className="admin-glass-menu admin-glass-modal rounded-2xl border border-white p-6">
         <div className="flex justify-between items-center pb-3 border-b border-slate-100">
           <div>
             <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">

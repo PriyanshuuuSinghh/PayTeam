@@ -6,6 +6,9 @@ import { getKycQueueSummary, listAdminKycApplications } from "../services/adminK
 import { useDashboardMetric } from "../hooks/useDashboardMetric";
 import { count, metricState, formatMoney } from "../../../components/workspace/format";
 import { OnboardingChart } from "./OnboardingChart";
+import { BusinessPerformance } from "./BusinessPerformance";
+import { OperationalQueues } from "./OperationalQueues";
+import { PlatformHealth } from "./PlatformHealth";
 
 const period = { period: "30d" };
 const loadPerformance = signal => fetchBusinessPerformance(period, signal);
@@ -17,9 +20,9 @@ const loadRecent = async signal => {
 };
 const date = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" });
 
-export function DashboardOverview({ customerDirectory }) {
+export function DashboardOverview({ customerDirectory, refreshVersion, onBusinessRefreshComplete, onRefreshBusiness, isRefreshingBusiness }) {
   const refresh = { invalidateOn: "payteam:kyc-reviewed" };
-  const business = useDashboardMetric(loadPerformance, 60000);
+  const business = useDashboardMetric(loadPerformance, 60000, { refreshVersion });
   const insights = useDashboardMetric(loadInsights, 60000, refresh);
   const summary = useDashboardMetric(fetchAccountSummary, 60000, refresh);
   const queue = useDashboardMetric(getKycQueueSummary, 30000, refresh);
@@ -59,9 +62,29 @@ export function DashboardOverview({ customerDirectory }) {
         </tr>) : <tr><td colSpan={5}><div className="gw-table-empty">{recent.data ? "No applications awaiting review." : metricState(recent)}</div></td></tr>}</tbody>
       </table></div>
     </section>
+    <DashboardOperations
+      refreshVersion={refreshVersion}
+      onBusinessRefreshComplete={onBusinessRefreshComplete}
+      onRefreshBusiness={onRefreshBusiness}
+      isRefreshingBusiness={isRefreshingBusiness}
+    />
   </div>;
 }
 
+export function DashboardOperations({ refreshVersion, onBusinessRefreshComplete, onRefreshBusiness, isRefreshingBusiness }) {
+  return (
+    <div className="payteam-admin-glass space-y-3 rounded-2xl p-3 sm:space-y-4">
+      <PlatformHealth />
+      <OperationalQueues />
+      <div className="flex justify-end">
+        <button type="button" className="gw-chip" disabled={isRefreshingBusiness} onClick={onRefreshBusiness}>
+          Refresh business metrics
+        </button>
+      </div>
+      <BusinessPerformance refreshVersion={refreshVersion} onRefreshComplete={onBusinessRefreshComplete} />
+    </div>
+  );
+}
 
 export function AccountSummary() {
   const result = useDashboardMetric(fetchAccountSummary, 60000, { invalidateOn: "payteam:kyc-reviewed" });

@@ -3,12 +3,12 @@ import { Link, Navigate, matchPath, useLocation, useSearchParams } from 'react-r
 import { useAdminDashboard } from '../../features/admin/hooks/useAdminDashboard';
 import GlassWorkspace from '../../components/workspace/GlassWorkspace';
 import { TransactionPanel } from '../../components/workspace/DashboardPanels';
-import { AccountSummary } from '../../features/admin/components/DashboardOverview';
+import { AccountSummary, DashboardOperations, DashboardOverview } from '../../features/admin/components/DashboardOverview';
 import UserSettings from '../user/UserSettings';
-import { PlatformHealth } from '../../features/admin/components/PlatformHealth';
-import { OperationalQueues } from '../../features/admin/components/OperationalQueues';
-import { BusinessPerformance } from '../../features/admin/components/BusinessPerformance';
-import { DashboardOverview } from '../../features/admin/components/DashboardOverview';
+import { getUnavailableAdminModule } from '../../features/admin/adminNavigation';
+import { Card, CardContent } from '../../components/ui/card';
+import { Construction } from 'lucide-react';
+import '../../features/admin/components/adminDashboardGlass.css';
 import { AdminUserTable } from '../../features/admin/components/AdminUserTable';
 
 import { ActionModal } from '../../features/admin/modals/ActionModal';
@@ -72,8 +72,7 @@ export default function AdminDashboardPage() {
   const isProfileRoute = Boolean(matchPath('/admin/profile', location.pathname) || targetUserMatch);
   const isDashboard = Boolean(matchPath('/admin/dashboard', location.pathname));
   const isKycRoute = Boolean(matchPath('/admin/kyc', location.pathname));
-  const unavailableTitle = matchPath('/admin/reports', location.pathname) ? 'Reports'
-    : matchPath('/admin/settings', location.pathname) ? 'Settings' : null;
+  const unavailableModule = getUnavailableAdminModule(location.pathname);
   const selectedRole = permittedRoles.find((role) => String(role.id) === requestedRoleId);
   const directoryRoleId = selectedRole ? String(selectedRole.id) : '';
   const directoryKey = metricParams ? new URLSearchParams(metricParams).toString() : directoryRoleId;
@@ -95,12 +94,19 @@ export default function AdminDashboardPage() {
   }, [isDirectoryRoute, location.pathname, directoryRoleId, setAddAgentModalOpen]);
 
   if (isCreateRoute) return <Navigate to="/admin/users" replace />;
-  if (!(isProfileRoute || isDirectoryRoute || isDashboard || isKycRoute || unavailableTitle)) {
+  if (!(isProfileRoute || isDirectoryRoute || isDashboard || isKycRoute || unavailableModule)) {
     return <Navigate to="/admin/dashboard" replace />;
   }
 
-  const customer = permittedRoles.find(role => role.slug === 'US');
-  const customerDirectory = customer ? '/admin/users?roleId=' + customer.id : '/admin/users';
+  const customer = permittedRoles.find((role) => role.slug === 'US');
+  const customerDirectory = customer ? '/admin/users?roleId=' + encodeURIComponent(customer.id) : '/admin/users';
+  const businessRefreshProps = {
+    refreshVersion: businessRefreshVersion,
+    onBusinessRefreshComplete: recordBusinessRefresh,
+    onRefreshBusiness: () => setBusinessRefreshVersion((version) => version + 1),
+    isRefreshingBusiness: businessRefreshResult?.version !== businessRefreshVersion,
+  };
+
   return (
     <GlassWorkspace admin permittedRoles={permittedRoles}>
           {isProfileRoute ? (
@@ -108,16 +114,26 @@ export default function AdminDashboardPage() {
           ) : isKycRoute ? (
             <AdminKycReview key={`${from ?? ""}:${to ?? ""}:${searchParams.get('step') ?? ""}`} />
           ) : isDashboard ? (
-            <DashboardOverview customerDirectory={customerDirectory} />
-          ) : unavailableTitle === 'Reports' ? (
+            <DashboardOverview customerDirectory={customerDirectory} {...businessRefreshProps} />
+          ) : unavailableModule?.path === '/admin/reports' ? (
             <div className="gw-reports space-y-4">
-              <div className="gw-panel-heading"><h1>Business reports</h1><button className="gw-chip" disabled={businessRefreshResult?.version !== businessRefreshVersion}
-                onClick={() => setBusinessRefreshVersion(value => value + 1)}>Refresh business metrics</button></div>
-              <BusinessPerformance refreshVersion={businessRefreshVersion} onRefreshComplete={recordBusinessRefresh} />
-              <PlatformHealth /><OperationalQueues /><AccountSummary /><TransactionPanel admin />
+              <h1>Business reports</h1>
+              <DashboardOperations {...businessRefreshProps} />
+              <AccountSummary />
+              <TransactionPanel admin />
             </div>
-          ) : unavailableTitle === 'Settings' ? (
+          ) : unavailableModule?.path === '/admin/settings' ? (
             <UserSettings />
+          ) : unavailableModule ? (
+            <Card className="admin-glass-menu mx-auto max-w-7xl rounded-2xl border py-0 ring-0">
+              <CardContent className="flex items-start gap-3 p-5 sm:p-6">
+                <Construction aria-hidden="true" className="size-5 shrink-0 text-blue-800" />
+                <div>
+                  <h1 className="text-lg font-semibold text-slate-950">{unavailableModule.label}</h1>
+                  <p className="mt-1 text-sm text-slate-600">This module is not yet available in PayTeam.</p>
+                </div>
+              </CardContent>
+            </Card>
           ) : (
             <><div className="gw-directory-tools">
               {!showRoles && !requestedRoleId && <button className="gw-chip" onClick={() => setShowRoles(true)}>Role directories</button>}

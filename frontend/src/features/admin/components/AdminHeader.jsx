@@ -10,6 +10,7 @@ import {
 const iconButton = "size-10 shrink-0 cursor-pointer place-items-center rounded-xl text-[#354875] hover:bg-[#e9eefb] focus-visible:outline-2 focus-visible:outline-blue-600";
 
 export function AdminHeader({
+  glass,
   pageTitle, breadcrumbs,
   sidebarCollapsed, setSidebarCollapsed, mobileSidebarOpen, setMobileSidebarOpen,
   onRefresh, isRefreshing, lastUpdated, refreshLabel = "Refresh account data",
@@ -20,12 +21,12 @@ export function AdminHeader({
   const initials = admin?.name?.trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join("").toUpperCase();
 
   return (
-    <header className="sticky top-0 z-30 flex min-h-[68px] items-center justify-between gap-2 border-b border-[#e5edf8] bg-white/95 px-3 py-2.5 backdrop-blur-sm sm:gap-4 sm:px-5 lg:px-6">
+    <header className={`admin-glass-header sticky top-0 z-30 flex min-h-[68px] items-center justify-between gap-2 border-b border-[#e5edf8] bg-white/95 px-3 py-2.5 sm:gap-4 sm:px-5 lg:px-6 ${glass ? "" : "backdrop-blur-sm"}`}>
       <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
         <button
           type="button"
           onClick={() => setSidebarCollapsed((current) => !current)}
-          className={`${iconButton} hidden md:grid`}
+          className={`${iconButton} admin-glass-control hidden md:grid`}
           aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           aria-expanded={!sidebarCollapsed}
           aria-controls="admin-sidebar"
@@ -35,7 +36,7 @@ export function AdminHeader({
         <button
           type="button"
           onClick={() => setMobileSidebarOpen(true)}
-          className={`${iconButton} grid md:hidden`}
+          className={`${iconButton} admin-glass-control grid md:hidden`}
           aria-label="Open admin navigation"
           aria-haspopup="dialog"
           aria-expanded={mobileSidebarOpen}
@@ -81,7 +82,7 @@ export function AdminHeader({
               aria-label={refreshLabel}
               aria-busy={isRefreshing}
               title={lastUpdated ? `${refreshLabel} · Last updated ${lastUpdated.toLocaleTimeString()}` : refreshLabel}
-              className={`${iconButton} grid bg-[#f4f6fc] disabled:cursor-wait disabled:opacity-60`}
+              className={`${iconButton} admin-glass-control grid bg-[#f4f6fc] disabled:cursor-wait disabled:opacity-60`}
             >
               <RefreshCw aria-hidden="true" className={`size-[18px] ${isRefreshing ? "motion-safe:animate-spin" : ""}`} />
             </button>
@@ -91,14 +92,14 @@ export function AdminHeader({
         <DropdownMenu>
           <DropdownMenuTrigger
             aria-label="Admin account menu"
-            className="flex shrink-0 cursor-pointer items-center gap-1 rounded-xl bg-[#f4f6fc] p-1 text-[#354875] hover:bg-[#e9eefb] focus-visible:outline-2 focus-visible:outline-blue-600 sm:pr-2"
+            className="admin-glass-control flex shrink-0 cursor-pointer items-center gap-1 rounded-xl bg-[#f4f6fc] p-1 text-[#354875] hover:bg-[#e9eefb] focus-visible:outline-2 focus-visible:outline-blue-600 sm:pr-2"
           >
-            <span aria-hidden="true" className="grid size-9 place-items-center rounded-full bg-[#405db1] text-sm font-semibold text-white">
+            <span aria-hidden="true" className="admin-glass-selected grid size-9 place-items-center rounded-full bg-[#405db1] text-sm font-semibold text-white">
               {initials || <UserRound className="size-4" />}
             </span>
             <ChevronDown aria-hidden="true" className="hidden size-4 sm:block" />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" sideOffset={8} className="w-56 rounded-xl p-1.5">
+          <DropdownMenuContent align="end" sideOffset={8} className={`w-56 rounded-xl p-1.5 ${glass ? "admin-glass-menu" : ""}`}>
             {admin && (
               <>
                 <DropdownMenuGroup>

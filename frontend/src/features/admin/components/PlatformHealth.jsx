@@ -27,7 +27,7 @@ function LatencySparkline({ history }) {
     : null);
 
   return (
-    <svg viewBox="0 0 160 28" className="mt-2 h-8 w-full text-blue-700" role="img" aria-label="Observed p95 by completed minute, with gaps for missing samples">
+    <svg viewBox="0 0 160 28" className="admin-glass-sparkline mt-2 h-8 w-full text-blue-700" role="img" aria-label="Observed p95 by completed minute, with gaps for missing samples">
       {points.map((point, index) => {
         if (!point) return null;
         const previous = points[index - 1];
@@ -42,18 +42,18 @@ function LatencySparkline({ history }) {
 function HealthMetricCard({ metric, value, status, detail, children }) {
   const Icon = metric.icon;
   return (
-    <Card className="h-full gap-0 rounded-xl border border-[#e2eaf8] bg-white py-0 shadow-sm ring-0">
-      <CardContent className="flex h-full flex-col px-3.5 py-3.5">
-        <div className="flex min-h-11 items-start justify-between gap-2">
-          <h3 className="pt-1 text-sm font-semibold leading-5 text-slate-950">{metric.title}</h3>
-          <span className={`grid size-9 shrink-0 place-items-center rounded-xl ${metric.color}`}>
-            <Icon aria-hidden="true" className="size-[18px]" />
+    <Card className="admin-glass-card h-full gap-0 rounded-xl border py-0 ring-0">
+      <CardContent className="flex h-full flex-col p-3">
+        <div className="flex min-h-8 items-start justify-between gap-2">
+          <h3 className="pt-0.5 text-sm font-semibold leading-[1.2] text-slate-950">{metric.title}</h3>
+          <span className={`admin-glass-icon grid size-8 shrink-0 place-items-center rounded-[10px] ${metric.color}`}>
+            <Icon aria-hidden="true" className="size-4" />
           </span>
         </div>
-        <p className={`mt-2 ${value == null ? "text-sm font-semibold text-slate-600" : "text-2xl font-bold tabular-nums tracking-tight text-slate-950"}`}>
+        <p className={`mt-1 ${value == null ? "text-sm font-semibold text-slate-600" : "text-2xl leading-7 font-bold tabular-nums tracking-tight text-slate-950"}`}>
           {value ?? status}
         </p>
-        <p className="mt-1.5 text-xs leading-5 text-slate-600">{detail}</p>
+        <p className="mt-1 text-xs leading-[1.35] text-slate-600">{detail}</p>
         {children}
       </CardContent>
     </Card>
@@ -81,25 +81,25 @@ export function PlatformHealth() {
   else if (snapshot) status = "No samples yet";
 
   return (
-    <section aria-labelledby="platform-health-heading" className="rounded-2xl border border-[#dce7fa] bg-linear-to-b from-[#eaf1fd] to-[#f8faff] p-3 sm:p-4">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+    <section aria-labelledby="platform-health-heading" className="admin-glass-section rounded-2xl border p-2.5 sm:p-3">
+      <div className="admin-glass-section-heading mb-2 flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex items-center gap-3">
-          <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-[#dce8fc] text-blue-700">
-            <Zap aria-hidden="true" className="size-6 fill-current" />
+          <span className="admin-glass-icon grid size-9 shrink-0 place-items-center rounded-[10px] text-blue-700">
+            <Zap aria-hidden="true" className="size-5 fill-current" />
           </span>
           <div>
             <h2 id="platform-health-heading" className="text-xl font-bold tracking-tight text-slate-950">Platform Health</h2>
             <p className="text-sm text-[#354875]">Payments, webhooks and API performance</p>
           </div>
         </div>
-        <span className="rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-blue-800">Telemetry refreshes every 15s while visible</span>
+        <span className="admin-glass-chip rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold text-blue-800">Telemetry refreshes every 15s while visible</span>
       </div>
 
       <div role="status" className={failed ? "mb-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-950" : "sr-only"}>
         {failed ? `Telemetry refresh failed. ${snapshot ? "Showing the last successful values." : "The next refresh will retry."}` : ""}
       </div>
 
-      <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7">
         {metrics.slice(0, -1).map((metric) => (
           <HealthMetricCard key={metric.title} metric={metric} status="Unavailable" detail={metric.detail} />
         ))}

@@ -25,7 +25,7 @@ export function AdminUserTable({
   metricView = false,
 }) {
   return (
-    <div className="space-y-5 max-w-7xl mx-auto pb-10">
+    <div className="admin-glass-workview mx-auto max-w-7xl space-y-4 pb-8">
       {/* ── Breadcrumb & Page Title ───────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
@@ -49,7 +49,7 @@ export function AdminUserTable({
         <button
           onClick={() => setAddAgentModalOpen(true)}
           disabled={!selectedRoleId}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-4 py-2 rounded-xl transition shadow-2xs flex items-center gap-2 cursor-pointer self-start sm:self-auto disabled:opacity-50"
+          className="admin-glass-selected bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm px-4 py-2 rounded-xl flex items-center gap-2 cursor-pointer self-start sm:self-auto disabled:opacity-50"
         >
           <Plus className="w-4 h-4 text-white" strokeWidth={2.25} />
           <span>Create User</span>
@@ -57,9 +57,9 @@ export function AdminUserTable({
       </div>
 
       {/* ── All Users Table Panel Container (User Dashboard Style) ── */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden hover:shadow-sm transition-shadow">
+      <div className="admin-glass-card overflow-hidden rounded-2xl border">
         {/* Header Summary */}
-        <div className="p-5 sm:p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h3 className="text-base font-bold text-slate-900">
               {getCurrentRoleTitle()} Records
@@ -79,7 +79,7 @@ export function AdminUserTable({
                   filteredMembers
                 )
               }
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl font-semibold transition cursor-pointer hover:shadow-sm text-xs"
+              className="admin-glass-control flex items-center gap-1.5 px-3.5 py-2 border border-white text-slate-700 rounded-xl font-semibold cursor-pointer text-sm"
             >
               <Download className="w-4 h-4 text-black" />
               <span>Export CSV</span>
@@ -88,7 +88,7 @@ export function AdminUserTable({
         </div>
 
         {/* Search & Filter Toolbar */}
-        <div className="p-4 sm:p-5 bg-slate-50/40 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="admin-glass-workview-toolbar p-3 sm:px-5 border-b flex flex-col md:flex-row md:items-center justify-between gap-3">
           {/* Search Input */}
           <div className="relative flex-1 max-w-md">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
