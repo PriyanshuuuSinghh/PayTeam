@@ -36,33 +36,16 @@ export function AppRoutes() {
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ForgotPasswordPage />} />
 
-      {/* 2. Standalone KYC Route (Accessible before full KYC approval) */}
       <Route element={<UserProtectedRoute requireKyc={false} />}>
-        <Route path="/kyc" element={<UserKyc />} />
-        <Route path="/user/kyc" element={<UserKyc />} />
-        <Route path="/user/kyc/*" element={<UserKyc />} />
-      </Route>
-
-      {/* 3. Normal User Protected Routes (/user/*) */}
-      <Route element={<UserProtectedRoute requireKyc={false} />}>
-        <Route path="/user" element={<UserLayout />}>
-          <Route index element={<Navigate to="/user/dashboard" replace />} />
-          <Route path="dashboard" element={<UserDashboard />} />
-          <Route path="*" element={<Navigate to="/user/dashboard" replace />} />
+        <Route element={<UserLayout />}>
+          <Route path="/kyc" element={<UserKyc />} />
+          <Route path="/user/kyc/*" element={<UserKyc />} />
+          <Route path="/user/profile" element={<UserProfile />} />
+          <Route path="/user/settings" element={<UserSettings />} />
+          <Route path="/user/dashboard" element={<UserDashboard />} />
+          <Route path="/user/*" element={<Navigate to="/user/dashboard" replace />} />
         </Route>
-
-        {/* /dashboard redirect to /user/dashboard for standard user navigation */}
         <Route path="/dashboard" element={<Navigate to="/user/dashboard" replace />} />
-      </Route>
-
-      {/* Account profile and password settings remain available before KYC completion. */}
-      <Route element={<UserProtectedRoute requireKyc={false} />}>
-        <Route path="/user/profile" element={<UserLayout />}>
-          <Route index element={<UserProfile />} />
-        </Route>
-        <Route path="/user/settings" element={<UserLayout />}>
-          <Route index element={<UserSettings />} />
-        </Route>
       </Route>
 
       {/* 4. Admin Protected Routes (/admin/*) */}

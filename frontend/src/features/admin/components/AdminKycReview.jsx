@@ -1,3 +1,4 @@
+import FormDialog from "../../../components/workspace/FormDialog";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
@@ -261,7 +262,7 @@ export default function AdminKycReview() {
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-600"><ClipboardCheck className="h-5 w-5" /></span>
           <div>
             <p className="text-[11px] font-semibold text-slate-500">Applications in selected filter</p>
-            <p className="mt-1 text-2xl font-bold text-slate-900">{loading ? "—" : (pagination.total ?? 0)}</p>
+            <p className="mt-1 text-2xl font-bold text-slate-900">{loading || listError ? "—" : (pagination.total ?? "—")}</p>
           </div>
         </div>
         <div className="admin-glass-card flex items-center gap-3 rounded-2xl border p-4">
@@ -281,7 +282,7 @@ export default function AdminKycReview() {
             <p className="mt-1 text-xs text-slate-400">Select an application to review its verification and document history.</p>
           </div>
           <span className="self-start rounded-xl border border-blue-200/80 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 sm:self-auto">
-            {pagination.total ?? 0} Records
+            {loading || listError ? "—" : pagination.total ?? "—"} Records
           </span>
         </div>
         <div className="admin-glass-workview-toolbar flex flex-col justify-between gap-3 border-b p-3 sm:flex-row sm:items-center sm:px-5">
@@ -353,7 +354,7 @@ export default function AdminKycReview() {
           </table>
         </div>
         <div className="flex flex-col justify-between gap-3 border-t border-slate-100 px-5 py-4 text-xs text-slate-500 sm:flex-row sm:items-center">
-          <p>{pagination.total ?? 0} total records · Page {pagination.page ?? page} of {Math.max(1, pagination.totalPages || 1)}</p>
+          <p>{loading || listError ? "—" : pagination.total ?? "—"} total records · Page {pagination.page ?? page} of {Math.max(1, pagination.totalPages || 1)}</p>
           <div className="flex gap-2">
             <button type="button" className={secondaryButton} disabled={loading || !pagination.hasPreviousPage} onClick={() => setPage((current) => Math.max(1, current - 1))}>
               <ChevronLeft className="h-3.5 w-3.5" /> Previous
@@ -366,10 +367,8 @@ export default function AdminKycReview() {
       </div>
 
       {selectedId != null && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 p-3 sm:p-6"
-          role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeCase(); }}>
-          <div role="dialog" aria-modal="true" aria-labelledby="kyc-review-title"
-            className="admin-glass-menu mx-auto my-4 w-full max-w-4xl overflow-hidden rounded-2xl border border-white sm:my-8">
+        <FormDialog wide title="Review KYC application" close={closeCase}>
+          <div className="admin-glass-menu mx-auto w-full max-w-4xl overflow-hidden rounded-2xl border border-white">
             <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-100 bg-white px-5 py-4 sm:px-6">
               <div>
                 <p className="mb-1 text-[11px] font-semibold text-blue-600">KYC Compliance / Application</p>
@@ -529,7 +528,7 @@ export default function AdminKycReview() {
               )}
             </div>
           </div>
-        </div>
+        </FormDialog>
       )}
     </section>
   );

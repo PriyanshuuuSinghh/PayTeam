@@ -61,6 +61,15 @@ export const fetchBackendUsers = async (params = {}, { signal } = {}) => {
   return response.data;
 };
 
+export async function fetchAccountSummary(signal) {
+  const { data } = await api.get("/admin/account-summary", { signal });
+  const summary = data?.data;
+  if (!["approved", "rejected", "awaitingReview", "total", "active"].every(key => Number.isInteger(summary?.[key]))) {
+    throw new Error("Invalid account summary");
+  }
+  return summary;
+}
+
 export async function fetchPlatformHealth(signal) {
   const { data } = await api.get("/admin/platform-health", { signal });
   const latency = data?.data?.apiLatency;

@@ -42,7 +42,7 @@ export function AdminUserTable({
             {getCurrentRoleTitle()}{metricView ? "" : " Directory"}
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">
-            Manage agent profiles, verify compliance status, and inspect downline hierarchy.
+            Manage customer profiles and check verification status.
           </p>
         </div>
 
@@ -64,12 +64,12 @@ export function AdminUserTable({
             <h3 className="text-base font-bold text-slate-900">
               {getCurrentRoleTitle()} Records
             </h3>
-            <p className="text-xs text-slate-400 mt-1">{filteredMembers.length} accounts in this directory</p>
+            <p className="text-xs text-slate-400 mt-1">{isLoadingUsers ? "Loading directory…" : loadError ? "Directory unavailable" : filteredMembers.length + " matching accounts"}</p>
           </div>
 
           <div className="flex items-center gap-2.5 flex-wrap">
             <span className="px-3 py-2 bg-blue-50 text-blue-700 border border-blue-200/80 font-bold rounded-xl text-xs">
-              {filteredMembers.length} Found
+              {isLoadingUsers || loadError ? "—" : filteredMembers.length + " found"}
             </span>
 
             <button
@@ -125,7 +125,7 @@ export function AdminUserTable({
             <thead>
               <tr className="bg-slate-50/70 border-b border-slate-100 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                 <th className="py-3 px-5 w-24 text-center">Status</th>
-                <th className="py-3 px-5 min-w-[220px]">Agent & Contact</th>
+                <th className="py-3 px-5 min-w-[220px]">Customer & contact</th>
                 <th className="py-3 px-5 min-w-[200px]">Shop & Location</th>
                 <th className="py-3 px-5 min-w-[170px]">Parent Hierarchy</th>
                 <th className="py-3 px-5 w-32 text-center">KYC Compliance</th>
@@ -138,7 +138,7 @@ export function AdminUserTable({
                   <td colSpan="6" className="text-center py-12 text-slate-400">
                     <div className="flex items-center justify-center gap-2">
                       <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                      <span className="text-xs">Loading live agent records from database...</span>
+                      <span className="text-xs">Loading customer records…</span>
                     </div>
                   </td>
                 </tr>
@@ -152,7 +152,7 @@ export function AdminUserTable({
                         {metricView ? "No matching customers" : selectedRoleId ? `No ${getCurrentRoleTitle()} users found` : "Choose a role directory"}
                       </p>
                       <p className="text-xs text-slate-400">
-                        {metricView || selectedRoleId ? "Try adjusting your search criteria." : "Select a permitted role under Users in the sidebar."}
+                        {metricView || selectedRoleId ? "Try adjusting your search criteria." : "Select an available role directory above."}
                       </p>
                     </div>
                   </td>
@@ -160,7 +160,7 @@ export function AdminUserTable({
               ) : (
                 filteredMembers.map((m) => {
                   const isActive = (m.status || "active").toLowerCase() === "active";
-                  const kycStatus = String(m.kyc?.status || "pending").toLowerCase();
+                  const kycStatus = String(m.kyc?.status || "not started").toLowerCase();
                   const isKycVerified =
                     kycStatus === "verified" || kycStatus === "completed" || kycStatus === "approved";
                   const isKycSubmitted =
@@ -189,7 +189,7 @@ export function AdminUserTable({
                         </span>
                       </td>
 
-                      {/* Agent & Contact */}
+                      {/* Customer & contact */}
                       <td className="py-4 px-5 align-middle">
                         <div className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
                           {m.name}
@@ -207,7 +207,7 @@ export function AdminUserTable({
                         </div>
                         <div className="mt-1">
                           <span className="inline-block bg-blue-50 text-blue-700 border border-blue-100 text-[10px] font-bold px-2 py-0.5 rounded-lg">
-                            {m.role_name || m.role_slug || "Retailer"}
+                            {m.role_name || m.role_slug || "Unavailable"}
                           </span>
                         </div>
                       </td>
@@ -226,7 +226,7 @@ export function AdminUserTable({
                       {/* Parent Hierarchy */}
                       <td className="py-4 px-5 align-middle">
                         <div className="font-medium text-slate-800">
-                          {m.parent_name || "System Admin"}
+                          {m.parent_name || "Unassigned"}
                         </div>
                         {m.company_name && (
                           <div className="text-slate-400 text-[11px] mt-0.5 truncate max-w-[170px]">
@@ -250,7 +250,7 @@ export function AdminUserTable({
                             ? "Verified"
                             : isKycSubmitted
                             ? "Under Review"
-                            : "Pending"}
+                            : kycStatus.replaceAll("_", " ")}
                         </span>
                       </td>
 
@@ -263,7 +263,7 @@ export function AdminUserTable({
                           <button
                             onClick={() => setActionModalUser(m)}
                             className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition border border-slate-200 inline-flex items-center justify-center cursor-pointer shadow-2xs hover:shadow-xs"
-                            title="Edit Agent Details"
+                            title="Edit customer details"
                           >
                             <Settings className="w-4 h-4 text-black" />
                           </button>
