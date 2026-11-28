@@ -203,6 +203,19 @@ async function isAdmin(userId) {
   return rows.length > 0;
 }
 
+async function getAdminAccess(userId) {
+  const [[row]] = await pool.execute(
+    `SELECT (r.id IS NOT NULL) AS is_admin
+       FROM users u
+       LEFT JOIN roles r ON r.id = u.role_id AND r.id = 1 AND r.slug = 'AD'
+      WHERE u.id = ? AND u.status = 'active'
+      LIMIT 1`,
+    [userId],
+  );
+  if (!row) return "inactive";
+  return Number(row.is_admin) === 1 ? "admin" : "forbidden";
+}
+
 async function incrementRateLimitCounter(
   bucketHash,
   windowStart,
@@ -498,6 +511,7 @@ const authModel = {
   findActiveUserById,
   isUserActive,
   isAdmin,
+  getAdminAccess,
   incrementRateLimitCounter,
   createPasswordReset,
   checkPasswordResetCredentials,

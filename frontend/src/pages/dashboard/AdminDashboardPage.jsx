@@ -1,32 +1,26 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, matchPath, useLocation, useSearchParams } from 'react-router-dom';
 import { useAdminDashboard } from '../../features/admin/hooks/useAdminDashboard';
-import GlassWorkspace from '../../components/workspace/GlassWorkspace';
 import { TransactionPanel } from '../../components/workspace/DashboardPanels';
-import { AccountSummary, DashboardOperations, DashboardOverview } from '../../features/admin/components/DashboardOverview';
+import { AccountSummary, DashboardOverview } from '../../features/admin/components/DashboardOverview';
 import UserSettings from '../user/UserSettings';
 import { getUnavailableAdminModule } from '../../features/admin/adminNavigation';
 import { Card, CardContent } from '../../components/ui/card';
 import { Construction } from 'lucide-react';
-import '../../features/admin/components/adminDashboardGlass.css';
-import { AdminUserTable } from '../../features/admin/components/AdminUserTable';
-
-import { ActionModal } from '../../features/admin/modals/ActionModal';
-import { AddAgentModal } from '../../features/admin/modals/AddAgentModal';
+import { loadAdminKycReview, loadAdminUserTable } from '../../features/admin/adminPageLoaders';
 import UserProfile from '../user/UserProfile';
-import AdminKycReview from '../../features/admin/components/AdminKycReview';
 
-export default function AdminDashboardPage() {
+const AdminKycReview = lazy(loadAdminKycReview);
+const AdminUserTable = lazy(loadAdminUserTable);
+const ActionModal = lazy(() => import('../../features/admin/modals/ActionModal').then(module => ({ default: module.ActionModal })));
+const AddAgentModal = lazy(() => import('../../features/admin/modals/AddAgentModal').then(module => ({ default: module.AddAgentModal })));
+
+export default function AdminDashboardPage({ onPermittedRolesChange }) {
   const location = useLocation();
   const isDirectoryRoute = Boolean(matchPath('/admin/users', location.pathname));
   const [searchParams] = useSearchParams();
   const requestedRoleId = searchParams.get('roleId') || '';
   const [showRoles, setShowRoles] = useState(false);
-  const [businessRefreshVersion, setBusinessRefreshVersion] = useState(0);
-  const [businessRefreshResult, setBusinessRefreshResult] = useState(null);
-  const recordBusinessRefresh = useCallback(({ version, at }) => {
-    setBusinessRefreshResult((previous) => ({ version, at: at ?? previous?.at }));
-  }, []);
   const {
     // Navigation
     getCurrentRoleTitle,
@@ -72,6 +66,7 @@ export default function AdminDashboardPage() {
   const isProfileRoute = Boolean(matchPath('/admin/profile', location.pathname) || targetUserMatch);
   const isDashboard = Boolean(matchPath('/admin/dashboard', location.pathname));
   const isKycRoute = Boolean(matchPath('/admin/kyc', location.pathname));
+  const isSettingsRoute = Boolean(matchPath('/admin/settings', location.pathname));
   const unavailableModule = getUnavailableAdminModule(location.pathname);
   const selectedRole = permittedRoles.find((role) => String(role.id) === requestedRoleId);
   const directoryRoleId = selectedRole ? String(selectedRole.id) : '';
@@ -79,6 +74,10 @@ export default function AdminDashboardPage() {
   const defaultDirectory = !requestedRoleId && !metricParams;
   const metricTitle = customerMetric === 'active' ? 'Active Customers' : 'New Customer Signups';
   const previousDirectoryRef = useRef({ pathname: location.pathname, roleId: directoryRoleId });
+
+  useEffect(() => {
+    onPermittedRolesChange?.(permittedRoles);
+  }, [onPermittedRolesChange, permittedRoles]);
 
   // Keep the selected role in the URL so direct links and refreshes retain the directory.
   useEffect(() => {
@@ -94,35 +93,30 @@ export default function AdminDashboardPage() {
   }, [isDirectoryRoute, location.pathname, directoryRoleId, setAddAgentModalOpen]);
 
   if (isCreateRoute) return <Navigate to="/admin/users" replace />;
-  if (!(isProfileRoute || isDirectoryRoute || isDashboard || isKycRoute || unavailableModule)) {
+  if (!(isProfileRoute || isDirectoryRoute || isDashboard || isKycRoute || isSettingsRoute || unavailableModule)) {
     return <Navigate to="/admin/dashboard" replace />;
   }
 
-  const customer = permittedRoles.find((role) => role.slug === 'US');
-  const customerDirectory = customer ? '/admin/users?roleId=' + encodeURIComponent(customer.id) : '/admin/users';
-  const businessRefreshProps = {
-    refreshVersion: businessRefreshVersion,
-    onBusinessRefreshComplete: recordBusinessRefresh,
-    onRefreshBusiness: () => setBusinessRefreshVersion((version) => version + 1),
-    isRefreshingBusiness: businessRefreshResult?.version !== businessRefreshVersion,
-  };
-
   return (
-    <GlassWorkspace admin permittedRoles={permittedRoles}>
+    <>
+      <Suspense fallback={<p role="status" className="gw-panel">Loading admin page…</p>}>
           {isProfileRoute ? (
             <UserProfile key={location.pathname} targetUserId={targetUserMatch?.params.id} />
           ) : isKycRoute ? (
             <AdminKycReview key={`${from ?? ""}:${to ?? ""}:${searchParams.get('step') ?? ""}`} />
           ) : isDashboard ? (
-            <DashboardOverview customerDirectory={customerDirectory} {...businessRefreshProps} />
+            <>
+              <h1 className="sr-only">PayTeam admin dashboard</h1>
+              <DashboardOverview />
+            </>
           ) : unavailableModule?.path === '/admin/reports' ? (
             <div className="gw-reports space-y-4">
               <h1>Business reports</h1>
-              <DashboardOperations {...businessRefreshProps} />
+              <DashboardOverview />
               <AccountSummary />
               <TransactionPanel admin />
             </div>
-          ) : unavailableModule?.path === '/admin/settings' ? (
+          ) : isSettingsRoute ? (
             <UserSettings />
           ) : unavailableModule ? (
             <Card className="admin-glass-menu mx-auto max-w-7xl rounded-2xl border py-0 ring-0">
@@ -157,20 +151,20 @@ export default function AdminDashboardPage() {
             /></>
           )}
 
-      {/* Edit Agent Configuration Modal */}
-      <ActionModal
+      </Suspense>
+      {actionModalUser && <Suspense fallback={null}><ActionModal
         actionModalUser={actionModalUser}
         setActionModalUser={setActionModalUser}
         handleUpdateMemberDetails={handleUpdateMemberDetails}
-      />
+      /></Suspense>}
 
       {/* Add New Agent Modal */}
-      <AddAgentModal
+      {addAgentModalOpen && <Suspense fallback={null}><AddAgentModal
         addAgentModalOpen={addAgentModalOpen}
         setAddAgentModalOpen={setAddAgentModalOpen}
         handleOnboardAgent={handleOnboardAgent}
         selectedRole={selectedRole?.slug || ""}
-      />
-    </GlassWorkspace>
+      /></Suspense>}
+    </>
   );
 }
