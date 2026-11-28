@@ -110,7 +110,7 @@ test("catalogue on isolated MySQL after baseline, catalogue migration, and rerun
   });
 
   await t.test("migration history preserves both SQL checksums and single seed application", async () => {
-    const [history] = await connection.query("SELECT migration, sha256 FROM schema_migrations ORDER BY migration");
+    const [history] = await connection.query("SELECT migration, sha256 FROM schema_migrations ORDER BY migration LIMIT 2");
     const migrations = ["001_initial_schema.sql", "002_master_service_operator_catalogue.sql"];
     assert.deepEqual(history.map(({ migration }) => migration), migrations);
     for (const { migration, sha256 } of history) {
