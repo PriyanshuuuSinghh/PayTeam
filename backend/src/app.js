@@ -44,7 +44,7 @@ app.use(
       return callback(null, false);
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "Idempotency-Key"],
+    allowedHeaders: ["Content-Type", "Authorization", "Idempotency-Key", "X-KYC-Consent-Version"],
   }),
 );
 

@@ -2,14 +2,6 @@ import React from "react";
 import { CheckCircle2, Clock, ShieldCheck, ArrowRight } from "lucide-react";
 
 export function KycSuccessView({ referenceId, onProceedDashboard, onCheckStatus, isCheckingStatus }) {
-  const submissionTime = new Date().toLocaleString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
   return (
     <div className="min-h-screen bg-[#f8fafc] text-slate-800 flex items-center justify-center p-4">
       <div className="w-full max-w-lg bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm text-center">
@@ -22,7 +14,7 @@ export function KycSuccessView({ referenceId, onProceedDashboard, onCheckStatus,
           KYC Application Submitted
         </h1>
         <p className="text-xs sm:text-sm text-slate-500 mt-1.5 leading-relaxed max-w-sm mx-auto">
-          Your merchant onboarding details and documentation have been received and are currently under compliance review.
+          Your customer verification details and documentation have been received and are currently under compliance review.
         </p>
 
         {/* Reference Details Box */}
@@ -32,11 +24,7 @@ export function KycSuccessView({ referenceId, onProceedDashboard, onCheckStatus,
             <span className="font-mono font-bold text-slate-900">{referenceId}</span>
           </div>
           <div className="flex justify-between items-center text-xs">
-            <span className="text-slate-500">Submission Timestamp:</span>
-            <span className="text-slate-800 font-medium">{submissionTime}</span>
-          </div>
-          <div className="flex justify-between items-center text-xs">
-            <span className="text-slate-500">Underwriting SLA:</span>
+            <span className="text-slate-500">Review status:</span>
             <span className="text-blue-700 font-semibold flex items-center gap-1">
               <Clock className="w-3.5 h-3.5" /> Pending review
             </span>
@@ -65,7 +53,7 @@ export function KycSuccessView({ referenceId, onProceedDashboard, onCheckStatus,
           onClick={onProceedDashboard}
           className="w-full bg-slate-900 hover:bg-black active:scale-[0.99] text-white font-medium text-sm py-3 rounded-xl transition shadow-xs flex items-center justify-center gap-2 cursor-pointer"
         >
-          <span>Go to Merchant Dashboard</span>
+          <span>Go to Dashboard</span>
           <ArrowRight className="w-4 h-4" />
         </button>
       </div>

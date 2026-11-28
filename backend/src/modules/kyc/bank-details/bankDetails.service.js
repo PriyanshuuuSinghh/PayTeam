@@ -81,6 +81,7 @@ async function verifyBankAccountWithIdto(bankDetails) {
 
     response = await fetch(endpoint, {
       method: "POST",
+      redirect: "error",
       headers: {
         "Content-Type": "application/json",
         "X-Client-ID": clientId,
@@ -244,7 +245,24 @@ async function findBankDetailsContext(connection, userId) {
 }
 
 async function saveBankDetails(userId, bankDetails) {
-  // Verify the account with IDTO before opening a database transaction.
+  // Check eligibility before sending account data or incurring provider charges.
+  // Recheck under lock after the external call as well.
+  if (process.env.PAYTEAM_LIVE_KYC_ENABLED === "true") {
+    let preflight;
+    try {
+      preflight = await bankDetailsModel.getConnection();
+      await preflight.beginTransaction();
+      const { kycCase } = await findBankDetailsContext(preflight, userId);
+      const pan = await bankDetailsModel.findKycStepForUpdate(preflight, kycCase.id, 3);
+      const bank = await bankDetailsModel.findKycStepForUpdate(preflight, kycCase.id, 4);
+      if (pan?.status !== "completed" || !bank || bank.status === "completed") throw new ApiError(409, "Bank verification is not available for this step", [], "KYC_PREREQUISITE_NOT_COMPLETED");
+      await preflight.commit();
+    } catch (error) {
+      await releaseConnection(preflight, true); preflight = null;
+      if (error instanceof ApiError) throw error;
+      throw serviceUnavailable();
+    } finally { if (preflight) await releaseConnection(preflight); }
+  }
   const verification = await verifyBankAccountWithIdto(bankDetails);
 
   let connection;

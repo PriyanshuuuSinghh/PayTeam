@@ -214,7 +214,7 @@ export default function LiveVideoKycRecorder({ uploadState = {}, onUpload }) {
         }
 
         const normalizedMimeType = actualMimeType.split(";")[0];
-        const fileName = `aquapay-video-kyc-${Date.now()}.${getFileExtension(normalizedMimeType)}`;
+        const fileName = `payteam-video-kyc-${Date.now()}.${getFileExtension(normalizedMimeType)}`;
         const file = new File([blob], fileName, { type: normalizedMimeType, lastModified: Date.now() });
 
         clearPreview();

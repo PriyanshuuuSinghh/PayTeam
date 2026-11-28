@@ -47,9 +47,10 @@ async function start() {
     const port = appConfig.port;
 
     const { default: digilockerProvider } = await import("./modules/kyc/document-verification/digilocker/digilocker.provider.js");
-    console.info(
-      `${appConfig.name} DigiLocker provider: ${digilockerProvider.mode}; Aadhaar XML signatures are not verified; PAN XML signature policy: ${signaturePolicy.mode}`,
-    );
+    const { getLiveKycConfig } = await import("./modules/kyc/liveKycConfig.js");
+    const aadhaarMode = getLiveKycConfig()?.aadhaarTrustMode || "disabled";
+    console.info(`${appConfig.name} DigiLocker provider: ${digilockerProvider.mode}; Aadhaar trust mode: ${aadhaarMode}; PAN XML signature policy: ${signaturePolicy.mode}`);
+    if (aadhaarMode === "idto_provider") console.warn("Aadhaar relies on the authorized IDTO response; independent XML signature verification is not performed. Results are tagged for development review.");
     if (signaturePolicy.developmentOnly) {
       console.warn("PAN XML verification results will be marked development-only and cryptographically unverified");
     }

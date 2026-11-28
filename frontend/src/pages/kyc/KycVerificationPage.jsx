@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { parseApiError } from "../../utils/errorHandler";
 import { isAdminRole } from "../../constants/roles";
 import { getCurrentUser } from "../../api/auth.api";
+import api from "../../api/axios";
 
 // Reusable White-Theme Components
 import KycStepper from "../../features/kyc/components/KycStepper";
@@ -53,7 +54,15 @@ import {
 
 export function KycVerificationPage() {
   const navigate = useNavigate();
-  const popupWindowRef = useRef(null);
+  const [capabilities, setCapabilities] = useState({});
+  const [authorizationUrl, setAuthorizationUrl] = useState("");
+  useEffect(() => {
+    const controller = new AbortController();
+    api.get("/kyc/capabilities", { signal: controller.signal }).then(res => {
+      if (!controller.signal.aborted) setCapabilities(res.data?.data || {});
+    }).catch(() => {});
+    return () => controller.abort();
+  }, []);
   const pollIntervalRef = useRef(null);
 
   const storedUser = (() => {
@@ -155,22 +164,6 @@ export function KycVerificationPage() {
     { id: 7, name: "Review & Submit", icon: Send, desc: "Final submission" },
   ];
 
-  // Helper: Whitelisted origins for DigiLocker / IDTO postMessage security
-  const getExpectedOrigins = useCallback(() => {
-    const list = [window.location.origin];
-    try {
-      const apiBase = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";
-      const apiUrl = new URL(apiBase);
-      list.push(apiUrl.origin);
-    } catch {}
-    list.push(
-      "https://idto.in",
-      "https://digilocker.meripehchaan.gov.in",
-      "https://meripehchaan.gov.in"
-    );
-    return list;
-  }, []);
-
   // Synchronize real legal name fetched from UIDAI Aadhaar across entire app state
   const syncAadhaarVerifiedName = useCallback(async (directVerifiedName, maskedId) => {
     let finalName = directVerifiedName;
@@ -252,6 +245,7 @@ export function KycVerificationPage() {
 
   // Check Aadhaar Verification Status from backend
   const handleCheckAadhaarStatus = useCallback(async () => {
+    if (!capabilities.aadhaar) return;
     setIsCheckingAadhaarStatus(true);
     setAadhaarErrorMessage("");
     try {
@@ -263,12 +257,12 @@ export function KycVerificationPage() {
         stopAadhaarPolling();
         setAadhaarVerified(true);
         setSessionStatus("verified");
-        const verifiedName = await syncAadhaarVerifiedName(
+        await syncAadhaarVerifiedName(
           statusRes.data?.verifiedName,
           statusRes.data?.maskedIdentifier
         );
         setCompletedSteps((prev) => Array.from(new Set([...prev, 2])));
-        toast.success(`Aadhaar e-KYC verified: ${verifiedName || "Verified"}`);
+        toast.success("Aadhaar verification confirmed.");
         setCurrentStep(3);
         window.scrollTo({ top: 0, behavior: "smooth" });
         return;
@@ -277,7 +271,7 @@ export function KycVerificationPage() {
       if (statusUpper === "FAILED") {
         stopAadhaarPolling();
         setSessionStatus("failed");
-        setAadhaarErrorMessage("UIDAI authentication failed. Please restart the session.");
+        setAadhaarErrorMessage("DigiLocker verification failed. Start a new session.");
         toast.error("Aadhaar authentication failed. Please try again.");
         return;
       }
@@ -296,16 +290,16 @@ export function KycVerificationPage() {
         stopAadhaarPolling();
         setAadhaarVerified(true);
         setSessionStatus("verified");
-        const verifiedName = await syncAadhaarVerifiedName();
+        await syncAadhaarVerifiedName();
         setCompletedSteps((prev) => Array.from(new Set([...prev, 2])));
-        toast.success(`Aadhaar e-KYC confirmed: ${verifiedName || "Verified"}`);
+        toast.success("Aadhaar verification confirmed.");
         setCurrentStep(3);
         window.scrollTo({ top: 0, behavior: "smooth" });
         return;
       }
 
       toast.info(
-        "Aadhaar authentication is still in progress. Please submit the OTP in the Government DigiLocker window, then check status again."
+        "Verification is still in progress. Complete authorization on DigiLocker and check status again."
       );
     } catch (err) {
       const parsed = parseApiError(err);
@@ -313,32 +307,7 @@ export function KycVerificationPage() {
     } finally {
       setIsCheckingAadhaarStatus(false);
     }
-  }, [digilockerSessionId, stopAadhaarPolling, syncAadhaarVerifiedName]);
-
-  // Listen for secure DigiLocker popup message
-  useEffect(() => {
-    const handlePopupMessage = (e) => {
-      // 1. Origin verification against trusted list (NO wildcard)
-      const allowed = getExpectedOrigins();
-      const originMatch = allowed.some((o) => e.origin && e.origin.toLowerCase() === o.toLowerCase());
-      if (!originMatch) return;
-
-      // 2. Validate source window if available
-      if (popupWindowRef.current && e.source && e.source !== popupWindowRef.current) {
-        return;
-      }
-
-      // 3. Trigger authoritative backend check (never trust message data alone)
-      if (e.data?.type === "DIGILOCKER_COMPLETED" || e.data?.action === "kyc_completed") {
-        // The popup message is a trigger only. Do not accept identity fields
-        // from postMessage; confirm them with our authenticated backend first.
-        handleCheckAadhaarStatus();
-      }
-    };
-
-    window.addEventListener("message", handlePopupMessage);
-    return () => window.removeEventListener("message", handlePopupMessage);
-  }, [getExpectedOrigins, handleCheckAadhaarStatus]);
+  }, [digilockerSessionId, capabilities.aadhaar, stopAadhaarPolling, syncAadhaarVerifiedName]);
 
   // Clean up polling interval on unmount
   useEffect(() => {
@@ -401,7 +370,7 @@ export function KycVerificationPage() {
           setUploadStates(currentMediaState());
           setFormData(prev => ({
             ...prev, selfieFile: null, videoFile: null, shopPhotoFile: null,
-            agreedTerms: false, agreedDataProcessing: false, agreedCreditCheck: false,
+            agreedTerms: false, currentAgreementAccepted: false, mediaConsent: false, agreedDataProcessing: false, agreedCreditCheck: false,
           }));
           return;
         }
@@ -538,6 +507,8 @@ export function KycVerificationPage() {
         videoFile: null,
         shopPhotoFile: null,
         agreedTerms: false,
+        currentAgreementAccepted: false,
+        mediaConsent: false,
         agreedDataProcessing: false,
         agreedCreditCheck: false,
       }));
@@ -665,181 +636,56 @@ export function KycVerificationPage() {
 
   // Step 2: Trigger Aadhaar DigiLocker Verification
   const handleTriggerOtp = async () => {
+    if (!capabilities.aadhaar || isInitiatingDigilocker) return;
     setIsInitiatingDigilocker(true);
     setAadhaarErrorMessage("");
+    setAuthorizationUrl("");
     try {
-      toast.info("Connecting to UIDAI verification gateway...");
-      const res = await initiateAadhaarVerification(true);
-      const authUrl = res?.data?.authorizationUrl;
-      const sessId = res?.data?.sessionId;
-
-      if (sessId) {
-        setDigilockerSessionId(sessId);
+      const res = await initiateAadhaarVerification(true, capabilities.consentVersion);
+      const url = new URL(res?.data?.authorizationUrl);
+      if (url.protocol !== "https:" || url.hostname !== "digilocker.idto.ai" || url.username || url.password || url.port || !res.data.sessionId) {
+        throw new Error("Unexpected DigiLocker authorization response");
       }
-
+      setDigilockerSessionId(res.data.sessionId);
+      setAuthorizationUrl(url.href);
       setOtpSent(true);
       setSessionStatus("pending");
       setAadhaarVerified(false);
-
-      if (authUrl) {
-        // Securely open popup window and store ref
-        const popup = window.open(authUrl, "_blank", "width=520,height=680,location=no,status=no");
-        popupWindowRef.current = popup;
-        toast.success("DigiLocker window opened. Please complete OTP authentication on the official portal.", { duration: 6000 });
-
-        // Auto-poll in background
-        if (sessId) {
-          stopAadhaarPolling();
-          const interval = setInterval(async () => {
-            try {
-              const statusRes = await getAadhaarVerificationStatus(sessId);
-              const statusUpper = String(statusRes?.data?.status || "").toUpperCase();
-              if (statusUpper === "VERIFIED") {
-                stopAadhaarPolling();
-                setAadhaarVerified(true);
-                setSessionStatus("verified");
-                const verifiedName = await syncAadhaarVerifiedName(
-                  statusRes.data?.verifiedName,
-                  statusRes.data?.maskedIdentifier
-                );
-                setCompletedSteps((prev) => Array.from(new Set([...prev, 2])));
-                toast.success(`Aadhaar e-KYC verified with UIDAI: ${verifiedName || "Verified"}`);
-              } else if (statusUpper === "FAILED") {
-                stopAadhaarPolling();
-                setSessionStatus("failed");
-              } else if (statusUpper === "EXPIRED") {
-                stopAadhaarPolling();
-                setSessionStatus("expired");
-              }
-            } catch {
-              // Silently poll
-            }
-          }, 3500);
-
-          pollIntervalRef.current = interval;
-          // Auto-terminate polling after 10-minute session TTL
-          setTimeout(() => {
-            stopAadhaarPolling();
-          }, 600000);
-        }
-      } else {
-        toast.info("Aadhaar OTP requested. Please enter the OTP received on your mobile.");
-      }
-    } catch (err) {
-      const parsed = parseApiError(err);
-      const isAlreadyInProgress =
-        err?.response?.status === 409 ||
-        err?.response?.data?.code === "VERIFICATION_IN_PROGRESS" ||
-        parsed?.message?.toLowerCase().includes("already in progress") ||
-        parsed?.message?.toLowerCase().includes("session is already");
-
-      if (isAlreadyInProgress) {
+    } catch (error) {
+      setSessionStatus("failed");
+      setAadhaarErrorMessage(parseApiError(error).message || "Unable to start Aadhaar verification.");
+      if (error?.response?.status === 409) {
         setOtpSent(true);
-        setSessionStatus("pending");
-        setAadhaarVerified(false);
-        toast.info("A verification session is already active. Please authenticate in the government window or check status.");
-
-        try {
-          const statusRes = await getAadhaarVerificationStatus();
-          const sessId = statusRes?.data?.sessionId;
-          if (sessId) setDigilockerSessionId(sessId);
-          const statusUpper = String(statusRes?.data?.status || "").toUpperCase();
-          if (statusUpper === "VERIFIED") {
-            setAadhaarVerified(true);
-            setSessionStatus("verified");
-            const verifiedName = await syncAadhaarVerifiedName(
-              statusRes.data?.verifiedName,
-              statusRes.data?.maskedIdentifier
-            );
-            setCompletedSteps((prev) => Array.from(new Set([...prev, 2])));
-            toast.success(`Aadhaar already verified: ${verifiedName || "Verified"}`);
-          }
-        } catch {}
-      } else {
-        setSessionStatus("failed");
-        setAadhaarErrorMessage(parsed.message || "Failed to initiate UIDAI session.");
-        toast.error(parsed.message || "Failed to initiate UIDAI Aadhaar session.");
+        setDigilockerSessionId(null);
       }
-    } finally {
-      setIsInitiatingDigilocker(false);
-    }
-  };
-
-  const handleResetAadhaarSession = async () => {
-    stopAadhaarPolling();
-    setOtpSent(false);
-    setDigilockerSessionId(null);
-    setAadhaarVerified(false);
-    setSessionStatus("idle");
-    setAadhaarErrorMessage("");
-    try {
-      await getAadhaarVerificationStatus();
-    } catch {}
-    toast.info("Session reset. You can now request a new Aadhaar verification.");
+    } finally { setIsInitiatingDigilocker(false); }
   };
 
   // Step 3: PAN Verification
   const handleVerifyPan = async () => {
-    const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
-    const cleanPan = String(formData.panNumber || "").trim().toUpperCase();
-    if (!cleanPan || !panRegex.test(cleanPan)) {
-      toast.error("Invalid PAN format. Must be 5 uppercase letters, 4 digits, and 1 letter (e.g. ABCDE1234F).");
-      return;
-    }
+    if (!capabilities.pan || panLoading) return;
+    const panNumber = String(formData.panNumber || "").trim().toUpperCase();
+    if (!/^[A-Z]{5}\d{4}[A-Z]$/.test(panNumber)) return;
     setPanLoading(true);
     setPanError("");
-
     try {
-      const res = await verifyPanDetails({ panNumber: cleanPan, consent: true });
-      const data = res?.data || {};
-
-      // Requirement: Reject development_unverified as real verification success
-      if (data.status === "development_unverified" || data.verificationStatus === "development_unverified") {
-        setPanVerified(false);
-        const msg = "PAN returned development_unverified from mock provider; this result cannot be accepted as real compliance verification.";
-        setPanError(msg);
-        toast.warning(msg);
-        return;
-      }
-
-      // Check if backend confirmed verification
-      const isVerified =
-        data.status === "VERIFIED" ||
-        data.status === "verified" ||
-        data.verificationStatus === "COMPLETED" ||
-        data.verified === true ||
-        Boolean(data.verifiedName || data.full_name);
-
-      if (!isVerified) {
-        setPanVerified(false);
-        const msg = data.message || "PAN verification could not be confirmed by the tax database.";
-        setPanError(msg);
-        toast.error(msg);
-        return;
-      }
-
-      const verifiedName = data.verifiedName || data.full_name;
-      const maskedId = data.maskedIdentifier || `••••••${cleanPan.slice(-4)}`;
+      const { data } = await verifyPanDetails({ panNumber, consent: true, consentVersion: capabilities.consentVersion });
+      if (data?.status !== "verified" || data.developmentOnly === true) throw new Error("Real PAN verification was not confirmed");
+      const status = await getKycStatus();
+      if (!status?.data?.completedSteps?.includes(3)) throw new Error("PAN completion was not confirmed by the backend");
       setPanVerified(true);
-      setFormData((prev) => ({
-        ...prev,
-        panNumber: cleanPan,
-        ...(verifiedName ? { panName: verifiedName } : {}),
-        panMasked: maskedId,
-      }));
-      toast.success(`PAN verified with Income Tax Dept: ${verifiedName || "Verified"}`);
-    } catch (err) {
-      const parsed = parseApiError(err);
-      setPanVerified(false);
-      setPanError(parsed.message || "PAN verification failed with tax database.");
-      toast.error(parsed.message || "PAN verification failed.");
-    } finally {
-      setPanLoading(false);
-    }
+      setCompletedSteps(prev => Array.from(new Set([...prev, 3])));
+      setFormData(prev => ({ ...prev, panNumber: "", panMasked: data.maskedIdentifier || "", panName: data.verifiedName || "" }));
+      toast.success("PAN verification confirmed.");
+      setCurrentStep(4);
+    } catch (error) {
+      setPanError(parseApiError(error).message || "PAN verification failed.");
+    } finally { setPanLoading(false); }
   };
 
   // Step 5: Granular Media Upload
   const handleFileUpload = async (file, assetType, fieldName) => {
+    if (!capabilities.media || !formData.mediaConsent) return;
     const stateKey = assetType === "selfie" ? "selfie" : assetType === "consent_video" ? "video" : "shop";
 
     setUploadStates((prev) => ({
@@ -848,7 +694,7 @@ export function KycVerificationPage() {
     }));
 
     try {
-      await uploadKycMedia(file, assetType);
+      await uploadKycMedia(file, assetType, capabilities.consentVersion);
       // ONLY mark as uploaded upon backend confirmation
       setUploadStates((prev) => ({
         ...prev,
@@ -871,6 +717,7 @@ export function KycVerificationPage() {
   const handleNextStep = async () => {
     // STEP 1 VALIDATION
     if (currentStep === 1) {
+      if (completedSteps.includes(1)) { setCurrentStep(2); return; }
       const isValid = validateStep1();
       if (!isValid) {
         toast.error("Please fill in all required fields accurately before proceeding.");
@@ -884,7 +731,7 @@ export function KycVerificationPage() {
           shopAddress: formData.shopAddress || formData.address,
         });
 
-        toast.success("Basic details saved. Please verify your identity with the OTP below.");
+        toast.success("Basic details saved. Enter the verification code to complete Step 1.");
         setStep1OtpPhase(true);
         setStep1OtpValue(["", "", "", "", "", ""]);
         setStep1OtpError("");
@@ -914,16 +761,17 @@ export function KycVerificationPage() {
 
     // STEP 2 VALIDATION (Aadhaar)
     if (currentStep === 2) {
+      if (!capabilities.aadhaar && !completedSteps.includes(2)) return;
       if (!aadhaarVerified) {
         if (otpSent) {
-          toast.error("Please complete the OTP verification in the DigiLocker window and click 'Check Verification Status'.");
+          toast.error("Complete DigiLocker authorization and check verification status.");
         } else {
-          toast.error("Please verify your Aadhaar identity via DigiLocker before proceeding to Step 3.");
+          toast.error("Complete Aadhaar verification before proceeding to Step 3.");
         }
         return;
       }
       setCompletedSteps((prev) => Array.from(new Set([...prev, 2])));
-      toast.success("Aadhaar e-KYC verified. Proceeding to PAN verification.");
+      toast.success("Step 2 completed. Proceeding to PAN.");
       setCurrentStep(3);
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
@@ -931,20 +779,8 @@ export function KycVerificationPage() {
 
     // STEP 3 VALIDATION (PAN)
     if (currentStep === 3) {
-      const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
-      const cleanPan = String(formData.panNumber || "").trim().toUpperCase();
-      if (!panRegex.test(cleanPan)) {
-        toast.error("Invalid PAN format. Must be 5 uppercase letters, 4 digits, and 1 letter (e.g. ABCDE1234F).");
-        return;
-      }
-      if (!panVerified) {
-        toast.error("Please click 'Verify PAN' to authenticate your PAN with the tax database.");
-        return;
-      }
-      setCompletedSteps((prev) => Array.from(new Set([...prev, 3])));
-      toast.success("PAN verified successfully.");
-      setCurrentStep(4);
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      if (completedSteps.includes(3)) { setCurrentStep(4); return; }
+      toast.error("Complete PAN verification before proceeding.");
       return;
     }
 
@@ -955,6 +791,7 @@ export function KycVerificationPage() {
         window.scrollTo({ top: 0, behavior: "smooth" });
         return;
       }
+      if (!capabilities.bank || !formData.bankConsent) return;
       const cleanAcc = String(formData.accountNumber || "").replace(/\D/g, "");
       const cleanConfirm = String(formData.confirmAccountNumber || "").replace(/\D/g, "");
       if (!cleanAcc || cleanAcc.length < 9 || cleanAcc.length > 18) {
@@ -976,13 +813,16 @@ export function KycVerificationPage() {
         const res = await saveBankDetails({
           ifscCode: cleanIfsc,
           accountNumber: cleanAcc,
-        });
+        }, capabilities.consentVersion);
+        if (res?.data?.verificationStatus !== "verified") throw new Error("Bank verification was not confirmed");
 
         const bankName = res?.data?.bankName || "";
 
         setFormData((prev) => ({
           ...prev,
           bankName,
+          accountNumber: `••••••••${res.data.accountNumberLast4 || ""}`,
+          confirmAccountNumber: "",
           ifscCode: cleanIfsc,
         }));
 
@@ -1030,20 +870,22 @@ toast.success("Bank details saved successfully.");
 
     // STEP 6 VALIDATION (Agreement)
     if (currentStep === 6) {
-      if (completedSteps.includes(6)) {
+      if (completedSteps.includes(6) && formData.currentAgreementAccepted) {
         setCurrentStep(7);
         window.scrollTo({ top: 0, behavior: "smooth" });
         return;
       }
-      if (!formData.agreedTerms) {
-        toast.error("Please review and accept the merchant agreement before proceeding.");
+      if (!capabilities.agreement || !formData.agreedTerms || !formData.agreementCode || !formData.agreementVersion) {
+        toast.error("Please review and accept the current customer agreement before proceeding.");
         return;
       }
       setIsSavingStep(true);
       try {
-        await acceptAgreement({ accepted: true });
+        const result = await acceptAgreement({ accepted: true, agreementCode: formData.agreementCode, agreementVersion: formData.agreementVersion });
+        if (result?.data?.accepted !== true) throw new Error("Agreement acceptance was not confirmed");
+        setFormData(prev => ({ ...prev, currentAgreementAccepted: true }));
         setCompletedSteps((prev) => Array.from(new Set([...prev, 6])));
-        toast.success("Merchant agreement executed successfully.");
+        toast.success("Customer agreement accepted.");
         setCurrentStep(7);
         window.scrollTo({ top: 0, behavior: "smooth" });
       } catch (err) {
@@ -1055,11 +897,7 @@ toast.success("Bank details saved successfully.");
       return;
     }
 
-    if (currentStep < 7) {
-      setCompletedSteps((prev) => Array.from(new Set([...prev, currentStep])));
-      setCurrentStep((prev) => prev + 1);
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }
+    // No client-only completion fallback. The backend must confirm every step.
   };
 
   const handlePrevStep = () => {
@@ -1098,7 +936,7 @@ toast.success("Bank details saved successfully.");
 
   const handleSubmitApplication = async () => {
     if (!formData.agreedTerms) {
-      toast.error("Please agree to the Merchant Agreement before submitting.");
+      toast.error("Please agree to the customer agreement before submitting.");
       return;
     }
 
@@ -1196,9 +1034,10 @@ toast.success("Bank details saved successfully.");
 
   return (
     <div className="min-h-screen bg-[#f8fafc] text-slate-800 font-sans selection:bg-blue-600 selection:text-white">
-      <h1 className="text-xl font-bold">Complete your KYC</h1>
+      <header className="pk-page-head"><div><span className="pk-eyebrow">PAYTEAM / IDENTITY</span><h1>Complete your KYC</h1><p>Follow the seven verification steps to prepare your account for review.</p></div><span className="pk-status-chip">{completedSteps.length} / 7 completed</span></header>
+      {capabilities.aadhaar && <div className="pk-live-banner" role="status">Authorized live-provider testing · Your verification requests use the configured external providers. Payment access remains locked.</div>}
 
-      <div className="max-w-6xl mx-auto px-4 py-6 md:py-8">
+      <div className="pk-layout">
         {/* Stepper Progress */}
         <KycStepper
           steps={steps}
@@ -1210,7 +1049,7 @@ toast.success("Bank details saved successfully.");
         />
 
         {/* Form Card Container */}
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
+        <div className="pk-panel pk-form-card">
           {/* Card Sub-header */}
           {currentStep !== 5 && currentStep !== 6 && (
             <div className="px-6 py-4 border-b border-slate-200 bg-slate-50/70 flex items-center justify-between">
@@ -1227,13 +1066,13 @@ toast.success("Bank details saved successfully.");
               </div>
 
               <span className="text-xs text-slate-500 font-medium bg-white px-3 py-1 rounded-full border border-slate-200">
-                Session Active
+                Verification step
               </span>
             </div>
           )}
 
           {/* Step Form Body */}
-          <div className={currentStep === 5 || currentStep === 6 ? "p-4 sm:p-6 bg-white" : "p-6 md:p-8 min-h-[380px] bg-white"}>
+          <div key={`${currentStep}-${step1OtpPhase}`} className={currentStep === 5 || currentStep === 6 ? "pk-step-body p-4 sm:p-6 bg-white" : "pk-step-body p-6 md:p-8 min-h-[380px] bg-white"}>
             {currentStep === 1 && !step1OtpPhase && (
               <Step1BasicDetails
                 formData={formData}
@@ -1264,6 +1103,9 @@ toast.success("Bank details saved successfully.");
               <Step2AadhaarAuth
                 formData={formData}
                 onChange={handleChange}
+                enabled={capabilities.aadhaar === true}
+                disclosure={capabilities.disclosures?.aadhaar}
+                authorizationUrl={authorizationUrl}
                 onTriggerOtp={handleTriggerOtp}
                 isInitiating={isInitiatingDigilocker}
                 digilockerSessionActive={otpSent}
@@ -1273,7 +1115,6 @@ toast.success("Bank details saved successfully.");
                 verifiedData={aadhaarVerifiedData}
                 sessionStatus={sessionStatus}
                 errorMessage={aadhaarErrorMessage}
-                onResetSession={handleResetAadhaarSession}
               />
             )}
 
@@ -1281,6 +1122,8 @@ toast.success("Bank details saved successfully.");
               <Step3PanVerification
                 formData={formData}
                 onChange={handleChange}
+                enabled={capabilities.pan === true}
+                disclosure={capabilities.disclosures?.pan}
                 panVerified={panVerified}
                 panLoading={panLoading}
                 onVerifyPan={handleVerifyPan}
@@ -1290,6 +1133,9 @@ toast.success("Bank details saved successfully.");
 
             {currentStep === 4 && (
               <Step4BankDetails
+                enabled={capabilities.bank === true}
+                disclosure={capabilities.disclosures?.bank}
+                busy={isSavingStep}
                 formData={formData}
                 onChange={handleChange}
                 isVerified={completedSteps.includes(4)}
@@ -1298,6 +1144,11 @@ toast.success("Bank details saved successfully.");
 
             {currentStep === 5 && (
               <Step5MediaUploads
+                enabled={capabilities.media === true}
+                disclosure={capabilities.disclosures?.media}
+                retention={capabilities.mediaRetention}
+                videoConsentScript={capabilities.videoConsentScript}
+                onChange={handleChange}
                 formData={formData}
                 onFileUpload={handleFileUpload}
                 onNext={handleNextStep}
@@ -1309,6 +1160,7 @@ toast.success("Bank details saved successfully.");
 
             {currentStep === 6 && (
               <Step6Agreements
+                enabled={capabilities.agreement === true}
                 isStepCompleted={completedSteps.includes(6)}
                 formData={formData} 
                 onChange={handleChange} 
@@ -1346,7 +1198,7 @@ toast.success("Bank details saved successfully.");
                   <button
                     type="button"
                     onClick={handleNextStep}
-                    disabled={isSavingStep}
+                    disabled={isSavingStep || (currentStep === 2 && !aadhaarVerified) || (currentStep === 3 && !panVerified) || (currentStep === 4 && !completedSteps.includes(4) && (!capabilities.bank || !formData.bankConsent))}
                     className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 active:scale-[0.99] disabled:opacity-60 text-white text-xs font-medium px-6 py-2.5 rounded-xl shadow-xs transition cursor-pointer"
                   >
                     {isSavingStep ? (
@@ -1389,7 +1241,7 @@ toast.success("Bank details saved successfully.");
         {/* Compliance Footer Note */}
         <div className="mt-8 text-center text-slate-400 text-xs">
           <span>
-            Protected by TLS encryption • Data processed in strict accordance with the Reserve Bank of India (RBI) Master Direction on KYC.
+            Verification progress is confirmed by the server. Payment services remain subject to approval and eligibility.
           </span>
         </div>
       </div>

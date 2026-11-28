@@ -137,7 +137,29 @@ test("production startup guard rejects persisted development-only PAN mock recor
   });
   await assert.rejects(model.assertNoDevelopmentUnverifiedRecords(), /Production startup blocked/);
   assert.deepEqual(capturedParams, [
+    "idto_digilocker_v1_provider_trust",
     "idto_digilocker_v1_dev_unverified",
     "idto_pan_detailed_v2_mock",
   ]);
+});
+
+test("provider-trust Aadhaar cannot be persisted outside explicitly configured live development", async () => {
+  for (const env of [{ APP_ENV: "production" }, { APP_ENV: "development", IDTO_PROVIDER_MODE: "mock" }, { APP_ENV: "development", IDTO_PROVIDER_MODE: "idto" }]) {
+    const model = createDigilockerModel({ dbPool: {}, env });
+    await assert.rejects(model.completeVerification({ verificationType: "aadhaar", aadhaarTrustMode: "idto_provider", persistIdentity() {} }), /AADHAAR_PROVIDER_TRUST_NOT_ALLOWED/);
+  }
+});
+
+
+test("production startup rejects development acknowledgements even with no development-only provider records", async () => {
+  const queries = [];
+  const model = createDigilockerModel({
+    dbPool: { async execute(sql, params) {
+      queries.push({sql, params});
+      return sql.includes("agreement_acceptances") ? [[{development_agreement_count:1}]] : [[{development_unverified_count:0}]];
+    } },
+    env: {APP_ENV:"production"},
+  });
+  await assert.rejects(model.assertNoDevelopmentUnverifiedRecords(), /development KYC acknowledgements/);
+  assert.deepEqual(queries[1].params, ["PAYTEAM_DEVELOPMENT_KYC_ACKNOWLEDGEMENT"]);
 });

@@ -71,7 +71,7 @@ export function Step7ReviewSubmit({
               onClick={() => onEditStep(1)}
               className="text-xs text-blue-600 hover:text-blue-700 font-medium hover:underline cursor-pointer"
             >
-              Modify
+              View
             </button>}
           </div>
 
@@ -85,7 +85,7 @@ export function Step7ReviewSubmit({
 
             <p>
               <span className="text-slate-500">Business Type:</span>{" "}
-              {formData.businessType || "Retail Merchant"}
+              {formData.businessType || "—"}
             </p>
 
             <p>
@@ -118,7 +118,7 @@ export function Step7ReviewSubmit({
               onClick={() => onEditStep(2)}
               className="text-xs text-blue-600 hover:text-blue-700 font-medium hover:underline cursor-pointer"
             >
-              Modify
+              View
             </button>}
           </div>
 
@@ -140,7 +140,7 @@ export function Step7ReviewSubmit({
             <div className="flex items-center gap-1.5 text-emerald-800 font-medium pt-1">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
               <span>
-                Identity Verified via UIDAI / Income Tax Records
+                Identity checks completed
               </span>
             </div>
           </div>
@@ -151,7 +151,7 @@ export function Step7ReviewSubmit({
           <div className="flex justify-between items-center text-xs font-semibold text-slate-800 border-b border-slate-200 pb-2">
             <span className="flex items-center gap-1.5 text-blue-900">
               <Building2 className="w-3.5 h-3.5 text-blue-600" />
-              Settlement Bank Account
+              Bank account
             </span>
 
             {!isRestartFlow && <button
@@ -159,7 +159,7 @@ export function Step7ReviewSubmit({
               onClick={() => onEditStep(4)}
               className="text-xs text-blue-600 hover:text-blue-700 font-medium hover:underline cursor-pointer"
             >
-              Modify
+              View
             </button>}
           </div>
 
@@ -198,7 +198,7 @@ export function Step7ReviewSubmit({
               onClick={() => onEditStep(5)}
               className="text-xs text-blue-600 hover:text-blue-700 font-medium hover:underline cursor-pointer"
             >
-              Modify
+              View
             </button>
           </div>
 
@@ -206,29 +206,29 @@ export function Step7ReviewSubmit({
             <p>
               <span className="text-slate-500">Signatory Photo:</span>{" "}
               <span className="text-emerald-700 font-medium">
-                Uploaded & Verified
+                Uploaded · pending review
               </span>
             </p>
 
             <p>
               <span className="text-slate-500">Consent Video:</span>{" "}
               <span className="text-emerald-700 font-medium">
-                Uploaded & Verified
+                Uploaded · pending review
               </span>
             </p>
 
             <p>
               <span className="text-slate-500">Shop Premise Photo:</span>{" "}
               <span className="text-emerald-700 font-medium">
-                Uploaded & Verified
+                Uploaded · pending review
               </span>
             </p>
 
             <p>
-              <span className="text-slate-500">Merchant Agreement:</span>{" "}
+              <span className="text-slate-500">Customer agreement:</span>{" "}
               <strong className="text-emerald-700">
                 {formData.agreedTerms
-                  ? "Executed & Accepted"
+                  ? "Accepted"
                   : "Pending"}
               </strong>
             </p>
@@ -239,11 +239,7 @@ export function Step7ReviewSubmit({
       {/* Compliance Confirmation */}
       <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-600 leading-relaxed">
         <p>
-          <strong>Merchant Undertaking:</strong> By submitting this KYC
-          application, you confirm that all information and documents
-          furnished are true, authentic, and complete. Any discrepancy or
-          misrepresentation may lead to rejection or account suspension
-          under applicable banking and payment regulations.
+          Review the information above before submitting it for admin review. Upload completion does not mean that your documents have been approved. Payment services remain locked until approval and eligibility checks.
         </p>
       </div>
     </div>

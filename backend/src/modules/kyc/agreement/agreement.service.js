@@ -1,3 +1,4 @@
+import { getLiveKycConfig } from "../liveKycConfig.js";
 import agreementModel from "./agreement.model.js";
 import ApiError from "../../../utils/ApiError.js";
 import httpStatus from "../../../utils/httpStatus.js";
@@ -89,11 +90,8 @@ async function releaseConnection(connection, rollback = false) {
 }
 
 async function getAgreementDetails(userId) {
-  assertAgreementConfigured();
+  const approved = assertAgreementConfigured();
 
-  // AquaPay's agreement implementation is preserved below as internal
-  // reference material. It must not be served by PayTeam without approved
-  // PayTeam legal text and versioning.
   if (!userId) {
     throw new ApiError(
       httpStatus.UNAUTHORIZED,
@@ -134,53 +132,13 @@ async function getAgreementDetails(userId) {
 
   const kycCase = cases[0];
 
-  const existingAcceptance = await agreementModel.findAgreementAcceptance(
-    null,
-    kycCase.id,
-    DEFAULT_AGREEMENT_CODE,
-    DEFAULT_AGREEMENT_VERSION,
-  );
-
-  const acceptedDate = existingAcceptance?.accepted_at
-    ? formatDate(new Date(existingAcceptance.accepted_at))
-    : formatDate();
-
-  const place = user.city ? `${user.city} City` : "India";
-
-  const content = generateAgreementContent({
-    agentName: user.name,
-    city: user.city,
-    mobile: user.mobile,
-    dateString: acceptedDate,
-  });
-
+  const existingAcceptance = await agreementModel.findAgreementAcceptance(null, kycCase.id, approved.code, approved.version);
   return {
-    agreementCode: DEFAULT_AGREEMENT_CODE,
-    agreementVersion: DEFAULT_AGREEMENT_VERSION,
-    title: AGREEMENT_TITLE,
-    content,
-    clauses: AGREEMENT_CLAUSES,
-    signSection: {
-      date: acceptedDate,
-      place,
-      signatureName: user.name,
-      mobileNumber: user.mobile,
-      disclaimer: "This is a system generated document. No physical signature required.",
-    },
-    agentDetails: {
-      userId: user.id,
-      name: user.name,
-      email: user.email,
-      mobile: user.mobile,
-      role: user.role_name || user.role_slug,
-      shopname: user.shopname,
-      address: user.address,
-      city: user.city,
-      state: user.state,
-      pincode: user.pincode,
-      businessType: kycCase.business_type,
-    },
-    isAccepted: !!existingAcceptance,
+    agreementCode: approved.code,
+    agreementVersion: approved.version,
+    title: approved.title,
+    content: approved.content,
+    isAccepted: Boolean(existingAcceptance),
     acceptedAt: existingAcceptance?.accepted_at || null,
   };
 }
@@ -190,10 +148,8 @@ async function acceptAgreement(
   userId,
   { agreementCode, agreementVersion, accepted } = {},
 ) {
-  assertAgreementConfigured();
+  const approved = assertAgreementConfigured();
 
-  // Keep the AquaPay workflow below for reference only; PayTeam acceptance
-  // remains disabled until approved terms are configured.
   if (!userId) {
     throw new ApiError(
       httpStatus.UNAUTHORIZED,
@@ -212,8 +168,11 @@ async function acceptAgreement(
     );
   }
 
-  const code = agreementCode || DEFAULT_AGREEMENT_CODE;
-  const version = agreementVersion || DEFAULT_AGREEMENT_VERSION;
+  const code = approved.code;
+  const version = approved.version;
+  if (agreementCode !== code || agreementVersion !== version) {
+    throw new ApiError(409, "Review the current approved customer agreement", [], "AGREEMENT_VERSION_MISMATCH");
+  }
 
   const connection = await agreementModel.getConnection();
   let rollback = false;
@@ -301,7 +260,8 @@ async function acceptAgreement(
       );
     }
 
-    if (step6.status === "completed") {
+    const currentAcceptance = await agreementModel.findAgreementAcceptance(connection, kycCase.id, code, version);
+    if (step6.status === "completed" && currentAcceptance) {
       throw new ApiError(
         httpStatus.CONFLICT,
         "Agreement step is already completed.",
@@ -319,10 +279,7 @@ async function acceptAgreement(
       acceptedAt,
     });
 
-    const step6Completed = await agreementModel.completeStep6(
-      connection,
-      kycCase.id,
-    );
+    const step6Completed = step6.status === "completed" || await agreementModel.completeStep6(connection, kycCase.id);
 
     if (!step6Completed) {
       throw new ApiError(
@@ -370,7 +327,9 @@ function agreementNotConfigured() {
 }
 
 function assertAgreementConfigured() {
-  throw agreementNotConfigured();
+  const agreement = getLiveKycConfig()?.agreement;
+  if (!agreement) throw agreementNotConfigured();
+  return agreement;
 }
 
 const agreementService = {
