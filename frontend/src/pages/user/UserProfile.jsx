@@ -74,14 +74,14 @@ export default function UserProfile({ targetUserId }) {
   ];
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
+    <div className="admin-glass-workview space-y-6 max-w-4xl mx-auto">
       <div>
         {directoryHref && <Link to={directoryHref} className="inline-block text-xs font-semibold text-blue-700 hover:text-blue-900 mb-3">Back to directory</Link>}
         <h1 className="text-2xl font-bold text-slate-900 tracking-tight">{ownProfile ? "My Account Profile" : "User Profile"}</h1>
         <p className="text-xs sm:text-sm text-slate-500 mt-0.5">Profile details from your PayTeam account</p>
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-2xs space-y-6">
+      <div className="admin-glass-card bg-white rounded-2xl border border-slate-200 p-6 shadow-2xs space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b border-slate-100 gap-4">
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-extrabold text-2xl flex items-center justify-center shadow-sm">
@@ -115,7 +115,7 @@ export default function UserProfile({ targetUserId }) {
 
       {ownProfile && <PasswordUpdateForm />}
       {!ownProfile && admin && Number(profile.role_id) !== 1 && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs">
+        <div className="admin-glass-card bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs">
           <Button type="button" onClick={() => setResetDialogOpen(true)} className="bg-blue-600 text-white hover:bg-blue-700">
             <KeyRound className="w-4 h-4" /> Reset Password
           </Button>

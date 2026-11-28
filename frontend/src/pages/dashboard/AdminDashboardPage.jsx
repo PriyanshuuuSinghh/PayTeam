@@ -4,6 +4,10 @@ import { useAdminDashboard } from '../../features/admin/hooks/useAdminDashboard'
 import { AdminSidebar } from '../../features/admin/components/AdminSidebar';
 import { AdminHeader } from '../../features/admin/components/AdminHeader';
 import { DashboardOverview } from '../../features/admin/components/DashboardOverview';
+import { getUnavailableAdminModule } from '../../features/admin/adminNavigation';
+import { Card, CardContent } from '../../components/ui/card';
+import { Construction } from 'lucide-react';
+import '../../features/admin/components/adminDashboardGlass.css';
 import { AdminUserTable } from '../../features/admin/components/AdminUserTable';
 
 import { ActionModal } from '../../features/admin/modals/ActionModal';
@@ -70,8 +74,7 @@ export default function AdminDashboardPage() {
   const isDirectoryRoute = Boolean(matchPath('/admin/users', location.pathname));
   const isDashboard = Boolean(matchPath('/admin/dashboard', location.pathname));
   const isKycRoute = Boolean(matchPath('/admin/kyc', location.pathname));
-  const unavailableTitle = matchPath('/admin/reports', location.pathname) ? 'Reports'
-    : matchPath('/admin/settings', location.pathname) ? 'Settings' : null;
+  const unavailableModule = getUnavailableAdminModule(location.pathname);
   const selectedRole = permittedRoles.find((role) => String(role.id) === requestedRoleId);
   const directoryRoleId = selectedRole ? String(selectedRole.id) : '';
   const directoryKey = metricParams ? new URLSearchParams(metricParams).toString() : directoryRoleId;
@@ -93,7 +96,7 @@ export default function AdminDashboardPage() {
   }, [isDirectoryRoute, location.pathname, directoryRoleId, setAddAgentModalOpen]);
 
   if (isCreateRoute) return <Navigate to="/admin/users" replace />;
-  if (!(isProfileRoute || isDirectoryRoute || isDashboard || isKycRoute || unavailableTitle)) {
+  if (!(isProfileRoute || isDirectoryRoute || isDashboard || isKycRoute || unavailableModule)) {
     return <Navigate to="/admin/dashboard" replace />;
   }
 
@@ -109,13 +112,13 @@ export default function AdminDashboardPage() {
     if (selectedRole || metricParams) breadcrumbs.push({ label: 'Users', to: '/admin/users' });
   } else if (isKycRoute) {
     pageTitle = 'KYC Management';
-  } else if (unavailableTitle) {
-    pageTitle = unavailableTitle;
+  } else if (unavailableModule) {
+    pageTitle = unavailableModule.label;
   }
   breadcrumbs.push({ label: pageTitle });
 
   return (
-    <div className={`min-h-screen bg-[#f8fafc] flex font-sans text-slate-800 antialiased selection:bg-blue-600 selection:text-white ${sidebarCollapsed ? '[--admin-sidebar-width:4.5rem]' : '[--admin-sidebar-width:14rem]'}`}>
+    <div className={`payteam-admin-glass min-h-screen flex font-sans text-slate-800 antialiased selection:bg-blue-600 selection:text-white ${sidebarCollapsed ? '[--admin-sidebar-width:4.5rem]' : '[--admin-sidebar-width:14rem]'}`}>
       {/* Admin Sidebar Navigation */}
       <AdminSidebar
         sidebarCollapsed={sidebarCollapsed}
@@ -126,10 +129,11 @@ export default function AdminDashboardPage() {
 
       {/* Main Content Area */}
       <div
-        className="flex-1 flex flex-col min-w-0 transition-[margin] duration-200 motion-reduce:transition-none md:ml-(--admin-sidebar-width)"
+        className="admin-glass-workspace flex-1 flex flex-col min-w-0 transition-[margin] duration-200 motion-reduce:transition-none md:ml-(--admin-sidebar-width)"
       >
         {/* Top Header */}
         <AdminHeader
+          glass
           pageTitle={pageTitle}
           breadcrumbs={breadcrumbs}
           sidebarCollapsed={sidebarCollapsed}
@@ -144,7 +148,7 @@ export default function AdminDashboardPage() {
         />
 
         {/* Dynamic Main Workspace Views - Backend-Backed Only */}
-        <main className="min-w-0 flex-1 p-3 sm:p-5 xl:px-6">
+        <main className="admin-glass-content min-w-0 flex-1 p-3 sm:p-4 xl:px-6">
           {isProfileRoute ? (
             <UserProfile key={location.pathname} targetUserId={targetUserMatch?.params.id} />
           ) : isKycRoute ? (
@@ -154,8 +158,18 @@ export default function AdminDashboardPage() {
               refreshVersion={businessRefreshVersion}
               onBusinessRefreshComplete={recordBusinessRefresh}
             />
-          ) : unavailableTitle ? (
-            <p className="rounded-xl border border-slate-200 bg-white p-5 text-sm">This admin workspace is unavailable.</p>
+          ) : unavailableModule ? (
+            <Card className="admin-glass-card admin-glass-module mx-auto max-w-7xl rounded-2xl border py-0 ring-0">
+              <CardContent className="flex items-start gap-3 p-5 sm:p-6">
+                <span className="admin-glass-icon grid size-10 shrink-0 place-items-center rounded-xl text-blue-800">
+                  <Construction aria-hidden="true" className="size-5" />
+                </span>
+                <div>
+                  <h1 className="text-lg font-semibold text-slate-950">{pageTitle}</h1>
+                  <p className="mt-1 text-sm text-slate-600">This module is not yet available in PayTeam.</p>
+                </div>
+              </CardContent>
+            </Card>
           ) : (
             <AdminUserTable
               getCurrentRoleTitle={metricParams ? () => metricTitle : getCurrentRoleTitle}
