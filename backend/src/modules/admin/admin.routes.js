@@ -6,6 +6,7 @@ import {
   createAdminController,
 } from "./admin.controller.js";
 import adminKycRoutes from "./kyc/adminKyc.routes.js";
+import catalogueRoutes from "../catalogue/catalogue.routes.js";
 import { requireActiveAdmin } from "../../middlewares/auth.middleware.js";
 import ApiResponse from "../../utils/ApiResponse.js";
 import { getIdtoErrors, requestLatency } from "./platformHealth/requestLatency.js";
@@ -57,6 +58,9 @@ router.post(
 
 // Admin KYC routes
 router.use("/kyc", adminKycRoutes);
+if (process.env.ADMIN_CATALOGUE_ENABLED === "true") {
+  router.use("/catalogue", catalogueRoutes);
+}
 
 export { router };
 export default router;
