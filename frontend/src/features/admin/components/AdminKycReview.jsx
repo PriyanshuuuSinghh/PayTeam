@@ -59,8 +59,8 @@ const formatDate = (value) => {
 };
 
 const errorText = (error) => error?.response?.data?.message || "Something went wrong. Please try again.";
-const panel = "bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden";
-const secondaryButton = "inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-not-allowed disabled:opacity-50";
+const panel = "admin-glass-card rounded-2xl border overflow-hidden";
+const secondaryButton = "admin-glass-control inline-flex items-center justify-center gap-2 rounded-xl border border-white px-3.5 py-2 text-sm font-semibold text-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-not-allowed disabled:opacity-50";
 const primaryButton = "inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white shadow-2xs transition hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-not-allowed disabled:opacity-50";
 
 function StatusBadge({ status }) {
@@ -239,7 +239,7 @@ export default function AdminKycReview() {
   const actionable = ["submitted", "under_review"].includes(application?.kyc_status);
 
   return (
-    <section className="mx-auto max-w-7xl space-y-5 pb-10">
+    <section className="admin-glass-workview mx-auto max-w-7xl space-y-4 pb-8">
       {/* Match the existing AquaPay dashboard's breadcrumb and title rhythm. */}
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
         <div>
@@ -257,14 +257,14 @@ export default function AdminKycReview() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="flex items-center gap-3 rounded-2xl border border-blue-100/80 bg-blue-50/60 p-5 shadow-2xs">
+        <div className="admin-glass-card flex items-center gap-3 rounded-2xl border p-4">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-600"><ClipboardCheck className="h-5 w-5" /></span>
           <div>
             <p className="text-[11px] font-semibold text-slate-500">Applications in selected filter</p>
             <p className="mt-1 text-2xl font-bold text-slate-900">{loading ? "—" : (pagination.total ?? 0)}</p>
           </div>
         </div>
-        <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs">
+        <div className="admin-glass-card flex items-center gap-3 rounded-2xl border p-4">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700"><ShieldCheck className="h-5 w-5" /></span>
           <div>
             <p className="text-[11px] font-semibold text-slate-500">Current queue</p>
@@ -275,7 +275,7 @@ export default function AdminKycReview() {
       </div>
 
       <div className={panel}>
-        <div className="flex flex-col justify-between gap-3 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:p-6">
+        <div className="flex flex-col justify-between gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:p-5">
           <div>
             <h2 className="text-base font-bold text-slate-900">Merchant KYC Records</h2>
             <p className="mt-1 text-xs text-slate-400">Select an application to review its verification and document history.</p>
@@ -284,7 +284,7 @@ export default function AdminKycReview() {
             {pagination.total ?? 0} Records
           </span>
         </div>
-        <div className="flex flex-col justify-between gap-3 border-b border-slate-100 bg-slate-50/40 p-4 sm:flex-row sm:items-center sm:p-5">
+        <div className="admin-glass-workview-toolbar flex flex-col justify-between gap-3 border-b p-3 sm:flex-row sm:items-center sm:px-5">
           <div className="relative max-w-md flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input value={search} onChange={(event) => setSearch(event.target.value)} type="search"
@@ -366,10 +366,10 @@ export default function AdminKycReview() {
       </div>
 
       {selectedId != null && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 p-3 backdrop-blur-xs sm:p-6"
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 p-3 sm:p-6"
           role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeCase(); }}>
           <div role="dialog" aria-modal="true" aria-labelledby="kyc-review-title"
-            className="mx-auto my-4 w-full max-w-4xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl sm:my-8">
+            className="admin-glass-menu mx-auto my-4 w-full max-w-4xl overflow-hidden rounded-2xl border border-white sm:my-8">
             <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-100 bg-white px-5 py-4 sm:px-6">
               <div>
                 <p className="mb-1 text-[11px] font-semibold text-blue-600">KYC Compliance / Application</p>

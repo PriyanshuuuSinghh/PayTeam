@@ -32,7 +32,7 @@ function WaitDistribution({ total, distribution }) {
   const buckets = waitBuckets.filter(({ key }) => key !== "unknownWait" || distribution[key] > 0);
   return (
     <div className="mt-3">
-      <div aria-hidden="true" className="flex h-2.5 overflow-hidden rounded-full bg-slate-100">
+      <div aria-hidden="true" className="admin-glass-track flex h-2.5 overflow-hidden rounded-full bg-slate-100">
         {buckets.map(({ key, color }) => (
           <span key={key} className={color} style={{ flexBasis: `${distribution[key] / total * 100}%` }} />
         ))}
@@ -51,12 +51,12 @@ function WaitDistribution({ total, distribution }) {
 
 function QueueCard({ title, icon: Icon, children }) {
   return (
-    <Card className="h-full gap-0 rounded-xl border border-[#e4e5fa] bg-white py-0 shadow-sm ring-0">
-      <CardContent className="flex h-full flex-col px-3.5 py-3.5">
-        <div className="flex min-h-11 items-start justify-between gap-2">
-          <h3 className="pt-1 text-sm font-semibold leading-5 text-slate-950">{title}</h3>
-          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-700">
-            <Icon aria-hidden="true" className="size-[18px]" />
+    <Card className="admin-glass-card h-full gap-0 rounded-xl border py-0 ring-0">
+      <CardContent className="flex h-full flex-col p-3">
+        <div className="flex min-h-8 items-start justify-between gap-2">
+          <h3 className="pt-0.5 text-sm font-semibold leading-[1.2] text-slate-950">{title}</h3>
+          <span className="admin-glass-icon grid size-8 shrink-0 place-items-center rounded-[10px] text-blue-700">
+            <Icon aria-hidden="true" className="size-4" />
           </span>
         </div>
         {children}
@@ -70,10 +70,10 @@ export function OperationalQueues() {
   const { data: summary, failed, retry } = metric;
 
   return (
-    <section aria-labelledby="operational-queues-heading" className="rounded-2xl border border-[#e5e5fa] bg-linear-to-b from-[#efedfc] to-[#f9faff] p-3 sm:p-4">
-      <div className="mb-3 flex items-center gap-3">
-        <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-violet-100 text-violet-700">
-          <Users aria-hidden="true" className="size-6" />
+    <section aria-labelledby="operational-queues-heading" className="admin-glass-section rounded-2xl border p-2.5 sm:p-3">
+      <div className="admin-glass-section-heading mb-2 flex items-center gap-3">
+        <span className="admin-glass-icon grid size-9 shrink-0 place-items-center rounded-[10px] text-violet-700">
+          <Users aria-hidden="true" className="size-5" />
         </span>
         <div>
           <h2 id="operational-queues-heading" className="text-xl font-bold tracking-tight text-slate-950">Operational Queues</h2>
@@ -81,14 +81,14 @@ export function OperationalQueues() {
         </div>
       </div>
 
-      <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         <QueueCard title="KYC Cases Waiting for Review" icon={ClipboardCheck}>
           {summary ? (
             <>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
+              <div className="mt-1 flex flex-wrap items-center gap-2">
                 <p className="text-2xl font-bold tabular-nums tracking-tight text-slate-950">{number.format(summary.total)}</p>
                 {summary.averageWaitSeconds != null && (
-                  <span title="Average wait for cases with a valid submission timestamp" className="rounded-full bg-violet-100 px-2.5 py-1 text-xs font-semibold text-violet-800">
+                  <span title="Average wait for cases with a valid submission timestamp" className="admin-glass-chip rounded-full bg-violet-100 px-2.5 py-1 text-xs font-semibold text-violet-800">
                     Avg. {formatWait(summary.averageWaitSeconds)}
                   </span>
                 )}
@@ -106,7 +106,7 @@ export function OperationalQueues() {
           )}
           <MetricFreshness {...metric} />
           {failed && summary && <p role="status" className="mt-1 text-xs text-amber-800">Could not refresh the KYC queue.</p>}
-          <div className="mt-auto flex flex-wrap items-center gap-3 pt-3">
+          <div className="mt-auto flex flex-wrap items-center gap-3 pt-2">
             <Link to="/admin/kyc" className="rounded-md text-sm font-semibold text-blue-800 hover:underline focus-visible:outline-2 focus-visible:outline-blue-600">
               Open KYC queue
             </Link>
@@ -120,8 +120,8 @@ export function OperationalQueues() {
 
         {unavailableQueues.map(({ title, icon, detail }) => (
           <QueueCard key={title} title={title} icon={icon}>
-            <p className="mt-2 text-sm font-semibold text-slate-600">Unavailable</p>
-            <p className="mt-1.5 text-xs leading-5 text-slate-600">{detail}</p>
+            <p className="mt-1 text-sm font-semibold text-slate-600">Unavailable</p>
+            <p className="mt-1 text-xs leading-[1.35] text-slate-600">{detail}</p>
           </QueueCard>
         ))}
       </div>
