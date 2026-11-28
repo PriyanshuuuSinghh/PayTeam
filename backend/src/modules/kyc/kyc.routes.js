@@ -20,9 +20,7 @@ router.get("/capabilities", requireAuth, (req, res) => {
 });
 
 if (config) {
-  const { default: aadhaarRoutes } = await import("./document-verification/aadhaar/aadhaar.routes.js");
-  const { default: digilockerRoutes } = await import("./document-verification/digilocker/digilocker.routes.js");
-  // Callback is intentionally outside bearer authentication; its single-use state binds the session.
+  // Callback remains outside bearer authentication; single-use state binds the session.
   router.use(["/digilocker/aadhaar", "/pan", "/bank-details", "/media"], requireAuth, async (req, res, next) => {
     try {
       if (await authModel.isAdmin(req.user.id)) return next(new ApiError(403, "Customer account required", [], "FORBIDDEN"));
@@ -32,7 +30,11 @@ if (config) {
       return next();
     } catch { return next(new ApiError(503, "KYC authorization unavailable", [], "SERVICE_UNAVAILABLE")); }
   });
-  router.use(aadhaarRoutes, digilockerRoutes);
+  if (config.aadhaar) {
+    // Import Aadhaar first so its handler is registered before the callback is exposed.
+    router.use((await import("./document-verification/aadhaar/aadhaar.routes.js")).default);
+    router.use((await import("./document-verification/digilocker/digilocker.routes.js")).default);
+  }
   if (config.pan) router.use((await import("./document-verification/pan/pan.routes.js")).default);
   if (config.bank) router.use((await import("./bank-details/bankDetails.routes.js")).default);
   if (config.media) router.use((await import("./media/media.routes.js")).default);

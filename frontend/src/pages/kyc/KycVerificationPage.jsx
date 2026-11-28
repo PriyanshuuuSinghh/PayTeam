@@ -316,6 +316,43 @@ export function KycVerificationPage() {
     };
   }, [stopAadhaarPolling]);
 
+  // Poll only the current authenticated session. Stop on terminal status, step change or unmount.
+  useEffect(() => {
+    if (!capabilities.aadhaar || currentStep !== 2 || !digilockerSessionId ||
+        !["pending", "processing"].includes(sessionStatus)) return;
+    let cancelled = false;
+    let busy = false;
+    const tick = async () => {
+      if (busy || cancelled) return;
+      busy = true;
+      try {
+        const data = (await getAadhaarVerificationStatus(digilockerSessionId))?.data;
+        if (cancelled) return;
+        const status = String(data?.status || "").toUpperCase();
+        if (status === "VERIFIED") {
+          stopAadhaarPolling();
+          await syncAadhaarVerifiedName(data.verifiedName, data.maskedIdentifier);
+          if (cancelled) return;
+          setAadhaarVerified(true);
+          setSessionStatus("verified");
+          setCompletedSteps(prev => Array.from(new Set([...prev, 2])));
+          setAadhaarErrorMessage("");
+          toast.success("Aadhaar verification confirmed.");
+          setCurrentStep(3);
+        } else if (status === "EXPIRED" || data?.stage === "expired" || status === "FAILED") {
+          stopAadhaarPolling();
+          const expired = status === "EXPIRED" || data?.stage === "expired";
+          setSessionStatus(expired ? "expired" : "failed");
+          setAadhaarErrorMessage(expired ? "DigiLocker session expired. Start a new session." : "DigiLocker verification failed. Start a new session.");
+        }
+      } catch { /* Network failures do not imply a successful or failed verification. */ }
+      finally { busy = false; }
+    };
+    pollIntervalRef.current = setInterval(tick, 3500);
+    const timeout = setTimeout(stopAadhaarPolling, 600000);
+    return () => { cancelled = true; clearTimeout(timeout); stopAadhaarPolling(); };
+  }, [capabilities.aadhaar, currentStep, digilockerSessionId, sessionStatus, stopAadhaarPolling, syncAadhaarVerifiedName]);
+
   // Check authoritative KYC case + submission status on load and on explicit refresh.
   // Fail closed on conflicting backend responses rather than showing an editable Step 1.
   useEffect(() => {
@@ -637,9 +674,25 @@ export function KycVerificationPage() {
   // Step 2: Trigger Aadhaar DigiLocker Verification
   const handleTriggerOtp = async () => {
     if (!capabilities.aadhaar || isInitiatingDigilocker) return;
+    // Open during the click, not after an asynchronous provider request.
+    // Sever the opener relationship; the authenticated status API is authoritative.
+    let popup = null;
+    try {
+      popup = window.open("about:blank", "_blank", "width=520,height=680,location=yes,status=yes");
+      if (popup) {
+        popup.opener = null;
+        popup.document.title = "Connecting to DigiLocker…";
+      }
+    } catch {
+      try { popup?.close(); } catch { /* use the manual link */ }
+      popup = null;
+    }
+    stopAadhaarPolling();
     setIsInitiatingDigilocker(true);
     setAadhaarErrorMessage("");
     setAuthorizationUrl("");
+    setDigilockerSessionId(null);
+    setOtpSent(false);
     try {
       const res = await initiateAadhaarVerification(true, capabilities.consentVersion);
       const url = new URL(res?.data?.authorizationUrl);
@@ -651,12 +704,34 @@ export function KycVerificationPage() {
       setOtpSent(true);
       setSessionStatus("pending");
       setAadhaarVerified(false);
+      if (popup && !popup.closed) {
+        try { popup.location.replace(url.href); }
+        catch { try { popup.close(); } catch { /* use the manual link */ } }
+      }
+      toast.info("Complete DigiLocker authorization. Use the Open DigiLocker link if the window did not open.");
     } catch (error) {
+      try { popup?.close(); } catch { /* no active popup */ }
       setSessionStatus("failed");
       setAadhaarErrorMessage(parseApiError(error).message || "Unable to start Aadhaar verification.");
       if (error?.response?.status === 409) {
-        setOtpSent(true);
-        setDigilockerSessionId(null);
+        // Resume the existing session only if the authenticated backend confirms it.
+        try {
+          const status = (await getAadhaarVerificationStatus())?.data;
+          const state = String(status?.status || "").toUpperCase();
+          if (state === "VERIFIED") {
+            setAadhaarVerified(true);
+            setSessionStatus("verified");
+            await syncAadhaarVerifiedName(status.verifiedName, status.maskedIdentifier);
+            setCompletedSteps(prev => Array.from(new Set([...prev, 2])));
+            setAadhaarErrorMessage("");
+            setCurrentStep(3);
+          } else if (status?.sessionId && ["PENDING", "PROCESSING"].includes(state)) {
+            setDigilockerSessionId(status.sessionId);
+            setOtpSent(true);
+            setSessionStatus(state.toLowerCase());
+            setAadhaarErrorMessage("A verification session is already active. Complete it in DigiLocker or check its status.");
+          }
+        } catch { /* Preserve the original failure and allow retry. */ }
       }
     } finally { setIsInitiatingDigilocker(false); }
   };
