@@ -6,7 +6,7 @@ import {
   createAdminController,
 } from "./admin.controller.js";
 import adminKycRoutes from "./kyc/adminKyc.routes.js";
-import { requireAuth, requireAdmin } from "../../middlewares/auth.middleware.js";
+import { requireActiveAdmin } from "../../middlewares/auth.middleware.js";
 import ApiResponse from "../../utils/ApiResponse.js";
 import { getIdtoErrors, requestLatency } from "./platformHealth/requestLatency.js";
 import { getBusinessPerformance } from "./businessPerformance/businessPerformance.js";
@@ -15,7 +15,7 @@ import { getAccountSummary } from "./businessPerformance/accountSummary.js";
 
 const router = Router();
 
-router.get("/account-summary", requireAuth, requireAdmin, async (_req, res, next) => {
+router.get("/account-summary", requireActiveAdmin, async (_req, res, next) => {
   try {
     const data = await getAccountSummary();
     res.set("Cache-Control", "no-store").json(new ApiResponse(200, data));
@@ -24,7 +24,7 @@ router.get("/account-summary", requireAuth, requireAdmin, async (_req, res, next
   }
 });
 
-router.get("/business-insights", requireAuth, requireAdmin, async (req, res, next) => {
+router.get("/business-insights", requireActiveAdmin, async (req, res, next) => {
   try {
     const data = await getBusinessInsights(req.query);
     res.set("Cache-Control", "no-store").json(new ApiResponse(200, data));
@@ -33,7 +33,7 @@ router.get("/business-insights", requireAuth, requireAdmin, async (req, res, nex
   }
 });
 
-router.get("/business-performance", requireAuth, requireAdmin, async (req, res, next) => {
+router.get("/business-performance", requireActiveAdmin, async (req, res, next) => {
   try {
     const data = await getBusinessPerformance(req.query);
     res.set("Cache-Control", "no-store").json(new ApiResponse(200, data));
@@ -42,7 +42,7 @@ router.get("/business-performance", requireAuth, requireAdmin, async (req, res, 
   }
 });
 
-router.get("/platform-health", requireAuth, requireAdmin, (_req, res) => {
+router.get("/platform-health", requireActiveAdmin, (_req, res) => {
   res.set("Cache-Control", "no-store");
   res.json(new ApiResponse(200, { apiLatency: requestLatency.snapshot(), idtoErrors: getIdtoErrors() }));
 });

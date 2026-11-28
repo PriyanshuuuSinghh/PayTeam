@@ -1,5 +1,5 @@
 /* Existing forms, tables and review screens inherit workspace tokens. */
-.gw-internal {
+.gw-internal:not(.gw-admin-shell[data-theme="dark"] .gw-internal) {
   --color-slate-950:var(--ink);--color-slate-900:var(--ink);--color-slate-800:var(--ink);--color-slate-700:var(--ink);--color-slate-600:var(--muted);--color-slate-500:var(--muted);--color-slate-400:var(--muted);
   --color-slate-300:var(--grid);--color-slate-200:var(--line);--color-slate-100:var(--tint);--color-slate-50:var(--tint);
   --color-blue-800:var(--mint-ink);--color-blue-700:var(--mint-ink);--color-blue-600:#147759;--color-blue-500:#24835f;--color-blue-100:var(--mint);--color-blue-50:var(--tint);
@@ -16,9 +16,9 @@
 .gw-internal .bg-linear-to-r {--tw-gradient-from:var(--green);--tw-gradient-to:#5eb28e}
 .gw-internal [aria-label="KYC step completion"] .h-full {animation:gw-bar .68s ease both;transform-origin:left}
 .gw-internal .text-white {color:white}
-.gw-internal :is(.bg-blue-800,.bg-blue-700).text-white {background:#19694e}
-.gw[data-theme="dark"] .gw-internal :is(.bg-blue-50,.bg-emerald-50,.bg-amber-50,.bg-rose-50,.bg-violet-50,.bg-orange-50,.bg-violet-100,.bg-emerald-100,.bg-indigo-50) {background:var(--tint);color:var(--ink)}
-.gw[data-theme="dark"] .gw-internal :is(.text-emerald-700,.text-emerald-800,.text-rose-700,.text-amber-800,.text-violet-700,.text-blue-900) {color:var(--ink)}
+.gw-internal:not(.gw-admin-shell[data-theme="dark"] .gw-internal) :is(.bg-blue-800,.bg-blue-700).text-white {background:#19694e}
+.gw[data-theme="dark"]:not(.gw-admin-shell) .gw-internal :is(.bg-blue-50,.bg-emerald-50,.bg-amber-50,.bg-rose-50,.bg-violet-50,.bg-orange-50,.bg-violet-100,.bg-emerald-100,.bg-indigo-50) {background:var(--tint);color:var(--ink)}
+.gw[data-theme="dark"]:not(.gw-admin-shell) .gw-internal :is(.text-emerald-700,.text-emerald-800,.text-rose-700,.text-amber-800,.text-violet-700,.text-blue-900) {color:var(--ink)}
 .gw[data-theme="dark"] [data-tone="violet"] {color:#cc9af0}.gw[data-theme="dark"] [data-tone="green"] {color:#70d5a0}.gw[data-theme="dark"] [data-tone="aqua"] {color:#80c7ff}.gw[data-theme="dark"] [data-tone="amber"] {color:#f3c36b}
 .gw[data-theme="dark"] .gw-service svg {filter:none}
 .gw[data-theme="dark"] :focus-visible {outline-color:#87dfb5}
@@ -54,6 +54,88 @@
   .gw *, .gw *::before, .gw *::after {animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
 }
 
+.gw.gw-admin-shell {
+  --admin-header-height:clamp(68px,8.2vh,98px);
+  --admin-motion:160ms cubic-bezier(.2,.75,.25,1);
+  position:fixed;
+  inset:0;
+  display:grid;
+  grid-template-columns:clamp(175px,15vw,240px) minmax(0,1fr);
+  grid-template-rows:var(--admin-header-height) minmax(0,1fr);
+  min-height:0;
+  padding:0;
+  overflow:hidden;
+}
+/* The grid picks its final column width once. Only small sidebar details animate. */
+.gw.gw-admin-shell.gw-compact {grid-template-columns:70px minmax(0,1fr)}
+.gw-admin-shell > .gw-sidebar {
+  padding-block:0 var(--gap);
+  background:var(--glass);
+  border-inline-end:1px solid var(--line);
+}
+.gw-admin-sidebar-top {
+  display:flex;align-items:center;justify-content:space-between;gap:4px;
+  flex:0 0 var(--admin-header-height);min-width:0;
+}
+.gw-admin-sidebar-top .gw-brand {flex:0 1 auto;min-width:0;gap:6px}
+.gw-admin-sidebar-top .gw-logo {width:33px;height:33px}
+.gw-admin-sidebar-top .gw-brand strong {font-size:20px}
+.gw-admin-sidebar-top .gw-brand small {font-size:10px}
+.gw-admin-collapse {
+  display:grid;place-items:center;flex:none;
+  width:30px;height:30px;padding:0;
+}
+.gw-compact .gw-admin-sidebar-top .gw-brand > span:last-child {display:none}
+.gw-compact .gw-admin-sidebar-top .gw-logo,
+.gw-compact .gw-admin-collapse {width:24px;height:28px}
+.gw-admin-sidebar-footer {flex:none;margin-top:auto;padding-top:var(--gap)}
+.gw-admin-sign-out {
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  min-height:40px;width:100%;color:var(--ink);
+}
+.gw-admin-sign-out svg {color:var(--coral);flex:none}
+.gw-admin-shell .gw-admin-nav {min-height:0;overflow-y:auto;overscroll-behavior-y:contain}
+.gw-admin-shell .gw-drawer[open]:has(.gw-admin-nav) {display:flex;flex-direction:column;overflow:hidden}
+.gw-admin-shell .gw-drawer:has(.gw-admin-nav) .gw-dialog-title {flex:none}
+.gw-admin-shell > .gw-header {
+  padding-inline:clamp(12px,2vw,30px);
+  background:var(--glass);
+  border-bottom:1px solid var(--line);
+}
+.gw-admin-shell > .gw-header .gw-brand {display:none}
+.gw-admin-shell > .gw-main {
+  padding:clamp(10px,1.5vw,24px);
+  border:0;border-radius:0;background:none;box-shadow:none;
+  overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;
+}
+.gw-admin-shell > .gw-main [id][tabindex="-1"] {
+  scroll-margin-top:var(--gap);
+}
+@keyframes admin-sidebar-label-in {
+  from {opacity:0;transform:translateX(-4px)}
+  to {opacity:1;transform:translateX(0)}
+}
+@keyframes admin-nav-selection-in {from {opacity:.55} to {opacity:1}}
+.gw-admin-shell:not(.gw-compact) > .gw-sidebar :is(.gw-nav-label,.gw-admin-nav-heading,.gw-brand > span:last-child) {
+  animation:admin-sidebar-label-in var(--admin-motion) both;
+}
+.gw-admin-shell .gw-admin-collapse svg {animation:admin-sidebar-label-in var(--admin-motion) both}
+.gw-admin-shell .gw-active-pill {animation:admin-nav-selection-in var(--admin-motion) both}
+.gw-admin-shell :is(a, button:not(:disabled)) {transition-property:background-color,color,opacity,transform}
+.gw-admin-shell .gw-panel,
+.gw-admin-shell .gw-dialog::backdrop,
+.gw-admin-shell .gw-form-dialog::backdrop {backdrop-filter:none}
+@media(max-width:900px) {
+  .gw.gw-admin-shell,.gw.gw-admin-shell.gw-compact {
+    --admin-header-height:68px;
+    grid-template-columns:minmax(0,1fr);
+  }
+  .gw-admin-shell > .gw-header .gw-brand {display:flex}
+}
+@media(max-width:650px) {
+  .gw.gw-admin-shell {--admin-header-height:64px}
+  .gw-admin-shell > .gw-header {height:var(--admin-header-height);padding-inline:12px}
+}
 
 .gw-form-dialog {margin:auto;width:min(512px,calc(100vw - 24px));max-height:88dvh;overflow:auto;border:1px solid var(--line);border-radius:18px;background:var(--sheet);color:var(--ink);box-shadow:0 16px 60px #19202d55}
 .gw-form-dialog.gw-wide {width:min(900px,calc(100vw - 24px))}

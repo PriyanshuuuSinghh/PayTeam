@@ -19,13 +19,22 @@ export const registerCustomer = async (details) => {
   return response.data;
 };
 
-export const getCurrentUser = async (customToken) => {
-  const headers = customToken
-    ? { Authorization: `Bearer ${customToken}` }
-    : undefined;
+const pendingProfiles = new Map();
 
-  const response = await api.get("/auth/me", { headers });
-  return response.data;
+export const getCurrentUser = async (customToken) => {
+  const token = customToken || localStorage.getItem("accessToken");
+  if (!token) return (await api.get("/auth/me")).data;
+
+  const pending = pendingProfiles.get(token);
+  if (pending) return pending;
+
+  // Share only concurrent work for the same credential. A later check still
+  // makes an authoritative request, and a new login never shares the old one.
+  const request = api.get("/auth/me", { headers: { Authorization: `Bearer ${token}` } })
+    .then(response => response.data)
+    .finally(() => pendingProfiles.delete(token));
+  pendingProfiles.set(token, request);
+  return request;
 };
 
 /**

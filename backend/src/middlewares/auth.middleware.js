@@ -12,7 +12,7 @@ function forbidden(message = "Admin access required") {
   return new ApiError(403, message, [], "FORBIDDEN");
 }
 
-async function requireAuth(req, res, next) {
+async function authenticate(req, res, next, adminOnly) {
   const header = req.get("authorization");
   const match =
     typeof header === "string"
@@ -45,9 +45,13 @@ async function requireAuth(req, res, next) {
   }
 
   try {
-    if (!(await authModel.isUserActive(payload.sub))) {
+    const access = adminOnly
+      ? await authModel.getAdminAccess(payload.sub)
+      : (await authModel.isUserActive(payload.sub) ? "active" : "inactive");
+    if (access === "inactive") {
       return next(unauthorized("Invalid or expired access token"));
     }
+    if (adminOnly && access !== "admin") return next(forbidden());
   } catch {
     return next(
       new ApiError(
@@ -61,6 +65,16 @@ async function requireAuth(req, res, next) {
 
   req.user = { id: payload.sub };
   return next();
+}
+
+function requireAuth(req, res, next) {
+  return authenticate(req, res, next, false);
+}
+
+// Read-only dashboard routes can verify the active account and its admin role
+// together. Other routes keep their existing middleware and authorization.
+function requireActiveAdmin(req, res, next) {
+  return authenticate(req, res, next, true);
 }
 
 async function requireAdmin(req, res, next) {
@@ -93,5 +107,5 @@ const authMiddleware = {
   requireAdmin,
 };
 
-export { requireAuth, requireAdmin };
+export { requireAuth, requireAdmin, requireActiveAdmin };
 export default authMiddleware;

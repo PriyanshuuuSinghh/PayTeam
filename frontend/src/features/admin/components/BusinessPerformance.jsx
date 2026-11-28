@@ -25,11 +25,11 @@ const todayInIndia = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Kolkata"
 const focus = "focus-visible:outline-2 focus-visible:outline-blue-600";
 
 
-function BusinessMetric({ title, icon: Icon, accent, value, detail, change, freshness, to, status = "Unavailable" }) {
+function BusinessMetric({ title, icon: Icon, accent, value, detail, change, freshness, to, appearance = "", status = "Unavailable" }) {
   return (
-    <div className="relative min-w-0 rounded-xl border border-[#e7e8fb] bg-[#fafbff] p-3.5">
-      <span className={`mb-2 grid size-9 place-items-center rounded-xl ${accent}`}>
-        <Icon aria-hidden="true" className="size-[18px]" />
+    <div className={`admin-glass-tile relative min-w-0 rounded-xl border p-2.5 ${appearance}`}>
+      <span className={`admin-glass-icon mb-1.5 grid size-8 place-items-center rounded-[10px] ${accent}`}>
+        <Icon aria-hidden="true" className="size-4" />
       </span>
       <h4 className="text-sm font-medium leading-5 text-slate-800">
         {to ? <Link to={to} className="text-blue-800 hover:underline after:absolute after:inset-0 after:rounded-xl focus-visible:after:ring-2 focus-visible:after:ring-blue-600">{title}</Link> : title}
@@ -50,24 +50,32 @@ function BusinessMetric({ title, icon: Icon, accent, value, detail, change, fres
 
 const loadPerformance = (signal, filter) => fetchBusinessPerformance(filter, signal);
 
-export function BusinessPerformance({ refreshVersion = 0, onRefreshComplete }) {
+export function BusinessPerformance() {
   const [filter, setFilter] = useState({ period: "24h" });
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const [completedVersion, setCompletedVersion] = useState(null);
   const [customOpen, setCustomOpen] = useState(false);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const onComplete = useCallback((at, version) => onRefreshComplete?.({ version, at }), [onRefreshComplete]);
+  const onComplete = useCallback((_at, version) => setCompletedVersion(version), []);
   const currentResult = useDashboardMetric(loadPerformance, 60_000, { params: filter, refreshVersion, onComplete });
   const signups = currentResult?.data?.signups;
   const wallet = currentResult?.data?.walletBalance;
   const window = currentResult.data?.window;
   const status = currentResult.failed ? "Could not load" : currentResult.loading ? "Loading…" : "Unavailable";
 
-  return (
-    <section aria-labelledby="business-performance-heading" className="rounded-2xl border border-[#e5e5fa] bg-linear-to-b from-[#efedfc] to-[#f9faff] p-3 sm:p-4">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+  return <>
+    <div className="flex justify-end">
+      <button type="button" className="gw-chip" disabled={completedVersion !== refreshVersion}
+        onClick={() => setRefreshVersion(version => version + 1)}>
+        Refresh business metrics
+      </button>
+    </div>
+    <section aria-labelledby="business-performance-heading" className="admin-glass-section rounded-2xl border p-2.5 sm:p-3">
+      <div className="admin-glass-section-heading mb-2 flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex items-center gap-3">
-          <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-violet-100 text-violet-700">
-            <BarChart3 aria-hidden="true" className="size-6" />
+          <span className="admin-glass-icon grid size-9 shrink-0 place-items-center rounded-[10px] text-violet-700">
+            <BarChart3 aria-hidden="true" className="size-5" />
           </span>
           <div>
             <h2 id="business-performance-heading" className="text-xl font-bold tracking-tight text-slate-950">Business Performance</h2>
@@ -75,14 +83,14 @@ export function BusinessPerformance({ refreshVersion = 0, onRefreshComplete }) {
           </div>
         </div>
 
-        <div role="group" aria-label="Business performance period" className="flex flex-wrap items-center gap-1 rounded-full border border-[#e0e5fa] bg-white p-1">
+        <div role="group" aria-label="Business performance period" className="admin-glass-inset flex flex-wrap items-center gap-1 rounded-full border p-1">
           {periods.map(({ value, label }) => (
             <button
               key={value}
               type="button"
               aria-pressed={filter.period === value}
               onClick={() => { setCustomOpen(false); setFilter({ period: value }); }}
-              className={`rounded-full px-2.5 py-1.5 text-sm font-semibold ${focus} ${filter.period === value ? "bg-blue-800 text-white" : "bg-blue-50 text-blue-900 hover:bg-blue-100"}`}
+              className={`rounded-full px-2.5 py-1.5 text-sm font-semibold ${focus} ${filter.period === value ? "admin-glass-selected bg-blue-800 text-white" : "admin-glass-control bg-blue-50 text-blue-900 hover:bg-blue-100"}`}
             >
               {label}
             </button>
@@ -94,7 +102,7 @@ export function BusinessPerformance({ refreshVersion = 0, onRefreshComplete }) {
             aria-controls="business-performance-date-range"
             title={filter.period === "custom" ? `${filter.startDate} to ${filter.endDate} (IST)` : "Custom date range"}
             onClick={() => setCustomOpen((open) => !open)}
-            className={`rounded-full p-2 ${focus} ${filter.period === "custom" ? "bg-blue-800 text-white" : "text-blue-800 hover:bg-blue-50"}`}
+            className={`rounded-full p-2 ${focus} ${filter.period === "custom" ? "admin-glass-selected bg-blue-800 text-white" : "admin-glass-control text-blue-800 hover:bg-blue-50"}`}
           >
             <CalendarDays aria-hidden="true" className="size-4" />
           </button>
@@ -104,7 +112,7 @@ export function BusinessPerformance({ refreshVersion = 0, onRefreshComplete }) {
       {customOpen && (
         <form
           id="business-performance-date-range"
-          className="mb-3 flex flex-wrap items-end gap-3 rounded-xl border border-[#e0e5fa] bg-white p-3"
+          className="admin-glass-inset mb-3 flex flex-wrap items-end gap-3 rounded-xl border p-3"
           onSubmit={(event) => {
             event.preventDefault();
             setFilter({ period: "custom", startDate, endDate });
@@ -118,13 +126,13 @@ export function BusinessPerformance({ refreshVersion = 0, onRefreshComplete }) {
             Through (IST)
             <input required type="date" min={startDate || undefined} max={todayInIndia.format()} value={endDate} onChange={(event) => setEndDate(event.target.value)} className={`rounded-lg border border-slate-200 px-2 py-1.5 ${focus}`} />
           </label>
-          <button type="submit" className={`rounded-lg bg-blue-800 px-3 py-2 text-sm font-semibold text-white ${focus}`}>Apply</button>
+          <button type="submit" className={`admin-glass-selected rounded-lg bg-blue-800 px-3 py-2 text-sm font-semibold text-white ${focus}`}>Apply</button>
         </form>
       )}
 
-      <div className="grid items-start gap-3 2xl:grid-cols-[minmax(0,1fr)_minmax(0,2.6fr)]">
-        <Card className="min-w-0 gap-0 border border-[#e4e5fa] bg-white py-0 shadow-sm ring-0">
-          <CardContent className="p-3.5">
+      <div className="grid items-start gap-2 2xl:grid-cols-[minmax(0,1.1fr)_minmax(0,2.6fr)]">
+        <Card className="admin-glass-card min-w-0 gap-0 border py-0 ring-0">
+          <CardContent className="p-3">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-base font-semibold text-slate-950">Key Business Metrics</h3>
               {filter.period === "custom" && (
@@ -143,7 +151,7 @@ export function BusinessPerformance({ refreshVersion = 0, onRefreshComplete }) {
                 freshness={currentResult}
                 to={window ? `/admin/users?customers=signups&from=${window.start}&to=${window.end}` : undefined}
                 detail={signups ? `${integer.format(signups.previous)} signups in the previous period` : undefined} />
-              <BusinessMetric title="Aggregate customer wallet balance" icon={Wallet} accent="bg-emerald-100 text-emerald-800"
+              <BusinessMetric title="Aggregate customer wallet balance" icon={Wallet} accent="bg-emerald-100 text-emerald-800" appearance="admin-glass-wallet"
                 value={formatMoney(wallet?.amount)} status={status} freshness={currentResult} detail={wallet?.amount === null
                   ? "Some customer wallets are missing."
                   : "Current snapshot. Historical balances unavailable."} />
@@ -157,5 +165,5 @@ export function BusinessPerformance({ refreshVersion = 0, onRefreshComplete }) {
         <BusinessInsights filter={filter} refreshVersion={refreshVersion} />
       </div>
     </section>
-  );
+  </>;
 }

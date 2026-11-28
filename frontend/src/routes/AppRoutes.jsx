@@ -14,9 +14,6 @@ import UserProtectedRoute from "./UserProtectedRoute";
 import AdminLayout from "../layouts/AdminLayout";
 import UserLayout from "../layouts/UserLayout";
 
-// Admin Pages
-import ExistingAdminDashboard from "../pages/admin/ExistingAdminDashboard";
-
 // Normal User Pages
 import UserDashboard from "../pages/user/UserDashboard";
 import UserProfile from "../pages/user/UserProfile";
@@ -53,18 +50,7 @@ export function AppRoutes() {
 
       {/* 4. Admin Protected Routes (/admin/*) */}
       <Route element={<AdminProtectedRoute />}>
-        <Route path="/admin" element={<AdminLayout />}>
-          <Route index element={<Navigate to="/admin/dashboard" replace />} />
-          <Route path="dashboard" element={<ExistingAdminDashboard />} />
-          <Route path="users" element={<ExistingAdminDashboard />} />
-          <Route path="users/create" element={<ExistingAdminDashboard />} />
-          <Route path="users/:id" element={<UserProfile />} />
-          <Route path="kyc" element={<ExistingAdminDashboard />} />
-          <Route path="reports" element={<ExistingAdminDashboard />} />
-          <Route path="profile" element={<UserProfile />} />
-          <Route path="settings" element={<ExistingAdminDashboard />} />
-          <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
-        </Route>
+        <Route path="/admin/*" element={<AdminLayout />} />
       </Route>
 
       {/* Default Fallback */}
