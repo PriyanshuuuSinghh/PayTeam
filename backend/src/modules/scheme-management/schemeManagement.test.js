@@ -8,7 +8,8 @@ import { getAuthConfig, JWT_AUDIENCE, JWT_ISSUER } from "../../config/auth.js";
 import { errorHandler, notFound } from "../../middlewares/error.middleware.js";
 import authModel from "../auth/auth.model.js";
 import model from "./schemeManagement.model.js";
-import { parseConfiguration, parseCreate, parseId, parsePagination, parseUpdate, validateDraftAction } from "./schemeManagement.validator.js";
+import { requireDefaultScheme } from "./schemeResolution.js";
+import { parseConfiguration, parseCreate, parseId, parsePagination, parseUpdate, validateEmptyAction } from "./schemeManagement.validator.js";
 
 test("scheme input validation restricts metadata and validates identifiers, pagination and draft changes", () => {
   const invalid = { statusCode: 400 };
@@ -30,7 +31,18 @@ test("scheme input validation restricts metadata and validates identifiers, pagi
   }
   assert.equal(parseConfiguration({ status: 0 }), 0);
   assert.throws(() => parseConfiguration({ status: "1" }), invalid);
-  assert.throws(() => validateDraftAction({ status: "published" }), invalid);
+  assert.throws(() => validateEmptyAction({ status: "published" }), invalid);
+});
+
+test("default lookup fails closed when the configured row is missing", async () => {
+  const connection = {
+    async execute(sql) {
+      assert.match(sql, /scheme_default/);
+      assert.match(sql, /FOR SHARE/);
+      return [[]];
+    },
+  };
+  await assert.rejects(requireDefaultScheme(connection), { statusCode: 503, code: "SERVICE_UNAVAILABLE" });
 });
 
 test("scheme admin routes enforce existing authentication and the feature flag", async (t) => {
@@ -70,7 +82,8 @@ test("scheme admin routes enforce existing authentication and the feature flag",
   assert.equal((await request("", { id: "1", prefix: "/off" })).status, 404);
   for (const [method, path] of [["GET", ""], ["POST", ""], ["PATCH", "/1"], ["GET", "/1/versions"],
     ["POST", "/1/versions"], ["GET", "/1/versions/1"], ["POST", "/1/versions/1/clone"],
-    ["GET", "/1/versions/1/services"], ["PUT", "/1/versions/1/services/1"]]) {
+    ["GET", "/1/versions/1/services"], ["PUT", "/1/versions/1/services/1"],
+    ["POST", "/1/activate"], ["POST", "/1/deactivate"], ["PUT", "/1/default"], ["GET", "/customers/1/resolution"]]) {
     assert.equal((await request(path, { method })).status, 401);
     assert.equal((await request(path, { method, id: "2" })).status, 403);
   }

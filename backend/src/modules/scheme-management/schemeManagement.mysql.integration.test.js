@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomInt, randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { readFile, realpath } from "node:fs/promises";
 import { test } from "node:test";
@@ -76,20 +76,21 @@ test("scheme management on the disposable MySQL upgrade fixture", {
   await t.test("preserves existing scheme metadata, assignments and migration history", async () => {
     const legacy = await request("/25", 200);
     assert.deepEqual(legacy, {
-      id: "25", code: "LEGACY-25", name: "Default-Scheme", description: null, status: 0,
+      id: "25", code: "LEGACY-25", name: "Default-Scheme", description: null, status: 0, isDefault: 0,
       createdBy: null, updatedBy: null, createdAt: "2025-01-01T00:00:00.000Z", updatedAt: "2025-02-01T00:00:00.000Z",
     });
     const seeded = await request("/1", 200);
     assert.equal(seeded.code, "LEGACY-1");
     assert.equal(seeded.name, "Default Scheme");
     assert.equal(seeded.status, 1);
+    assert.equal(seeded.isDefault, 1);
     const [[assignment]] = await connection.query("SELECT CAST(scheme_id AS CHAR) AS schemeId FROM users WHERE id = 30002");
     assert.equal(assignment.schemeId, "25");
     assert.deepEqual((await request("/25/versions", 200)).items, []);
     assert.deepEqual((await request("/1/versions", 200)).items, []);
     const [history] = await connection.query("SELECT migration, sha256 FROM schema_migrations ORDER BY migration");
     assert.deepEqual(history.map(({ migration }) => migration), [
-      "001_initial_schema.sql", "002_master_service_operator_catalogue.sql", "003_scheme_versions_and_audit.sql",
+      "001_initial_schema.sql", "002_master_service_operator_catalogue.sql", "003_scheme_versions_and_audit.sql", "004_scheme_default.sql",
     ]);
     for (const { migration, sha256 } of history) {
       const sql = await readFile(new URL(`../../../database/migrations/${migration}`, import.meta.url), "utf8");
@@ -221,5 +222,118 @@ test("scheme management on the disposable MySQL upgrade fixture", {
     assert.equal(Number(failed.total), 0);
     const [[auditCount]] = await connection.execute("SELECT COUNT(*) AS total FROM scheme_audit_events WHERE scheme_id = ?", [scheme.id]);
     assert.equal(Number(auditCount.total), events.length);
+  });
+
+  await t.test("falls back without reassigning, then restores an eligible assignment after reactivation", async () => {
+    const resolutionPath = `/customers/${customer}/resolution`;
+    const fallback = await request(resolutionPath, 200);
+    assert.deepEqual(fallback, {
+      userId: customer,
+      assignedScheme: { id: "25", code: "LEGACY-25", name: "Default-Scheme", status: 0 },
+      effectiveScheme: { id: "1", code: "LEGACY-1", name: "Default Scheme", status: 1 },
+      source: "default",
+    });
+    await request(`/customers/${actor}/resolution`, 404);
+    await request("/customers/0/resolution", 400);
+    try {
+      const active = await request("/25/activate", 200, { method: "POST" });
+      assert.equal(active.status, 1);
+      const resolution = await request(resolutionPath, 200);
+      assert.equal(resolution.source, "assigned");
+      assert.equal(resolution.assignedScheme.id, "25");
+      assert.deepEqual(resolution.effectiveScheme, resolution.assignedScheme);
+      assert.deepEqual((await request("/25/versions", 200)).items, []);
+    } finally {
+      await request("/25/deactivate", 200, { method: "POST" });
+    }
+    assert.deepEqual(await request(resolutionPath, 200), fallback);
+    const [[assignment]] = await connection.query("SELECT CAST(scheme_id AS CHAR) AS id FROM users WHERE id = 30002");
+    assert.equal(assignment.id, "25");
+    const [events] = await connection.query("SELECT action FROM scheme_audit_events WHERE scheme_id = 25 ORDER BY id DESC LIMIT 2");
+    assert.deepEqual(events.map(({ action }) => action), ["SCHEME_DEACTIVATED", "SCHEME_ACTIVATED"]);
+  });
+
+  await t.test("atomically replaces the active default, constrains it in MySQL and uses it for registration", async (lifecycleTest) => {
+    const { registerCustomer } = await import("../auth/auth.model.js");
+    const first = await request("", 201, { method: "POST", body: { code: "LIFE-A-" + suffix, name: "Lifecycle A " + suffix } });
+    const second = await request("", 201, { method: "POST", body: { code: "LIFE-B-" + suffix, name: "Lifecycle B " + suffix } });
+    const setDefault = (id, expected = 200) => request(`/${id}/default`, expected, { method: "PUT" });
+    const setStatus = (id, action, expected = 200) => request(`/${id}/${action}`, expected, { method: "POST" });
+    const readDefault = async () => {
+      const [rows] = await connection.query(`SELECT CAST(d.scheme_id AS CHAR) AS id, s.status
+        FROM scheme_default AS d JOIN schemes AS s ON s.id = d.scheme_id`);
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].status, 1);
+      return rows[0].id;
+    };
+    const referenced = ({ code }) => ["ER_ROW_IS_REFERENCED", "ER_ROW_IS_REFERENCED_2"].includes(code);
+
+    try {
+      assert.equal(await readDefault(), "1");
+      await setStatus("1", "deactivate", 409);
+      await assert.rejects(connection.query("UPDATE schemes SET status = 0 WHERE id = 1"), referenced);
+      await setDefault(first.id, 409);
+      await assert.rejects(connection.execute("UPDATE scheme_default SET scheme_id = ? WHERE singleton_id = 1", [first.id]), fkError);
+      await assert.rejects(connection.query("INSERT INTO scheme_default (singleton_id, scheme_id) VALUES (2, 1)"),
+        { code: "ER_CHECK_CONSTRAINT_VIOLATED" });
+      await setStatus(first.id, "activate");
+      await setStatus(second.id, "activate");
+
+      const appendAudit = model.appendAudit;
+      const audit = lifecycleTest.mock.method(model, "appendAudit", (conn, event) => appendAudit(conn, { ...event, actor: "999999" }));
+      try {
+        await setDefault(first.id, 503);
+        await setStatus(first.id, "deactivate", 503);
+        assert.equal(await readDefault(), "1");
+        assert.equal((await request(`/${first.id}`, 200)).status, 1);
+      } finally {
+        audit.mock.restore();
+      }
+
+      const switched = await setDefault(first.id);
+      assert.equal(switched.isDefault, 1);
+      await setDefault(first.id);
+      assert.equal(await readDefault(), first.id);
+      assert.equal((await request("/1", 200)).isDefault, 0);
+      await setStatus(first.id, "deactivate", 409);
+      const [[replacement]] = await connection.execute(`
+        SELECT previous_state AS previousState, new_state AS newState
+        FROM scheme_audit_events WHERE action = 'DEFAULT_SCHEME_REPLACED' AND scheme_id = ?
+      `, [first.id]);
+      assert.deepEqual(replacement.previousState, { schemeId: "1" });
+      assert.deepEqual(replacement.newState, { schemeId: first.id });
+      const [[{ total }]] = await connection.execute(`
+        SELECT COUNT(*) AS total FROM scheme_audit_events WHERE action = 'DEFAULT_SCHEME_REPLACED' AND scheme_id = ?
+      `, [first.id]);
+      assert.equal(Number(total), 1);
+
+      const registered = await registerCustomer({
+        name: "Lifecycle Test Customer", email: `scheme-${suffix}@example.test`,
+        mobile: "+91" + randomInt(6_000_000_000, 10_000_000_000), passwordHash: "unusable-test-hash",
+      });
+      const [[created]] = await connection.execute(`
+        SELECT CAST(u.scheme_id AS CHAR) AS schemeId, w.user_id IS NOT NULL AS hasWallet, k.id IS NOT NULL AS hasKyc
+        FROM users AS u LEFT JOIN user_wallets AS w ON w.user_id = u.id
+        LEFT JOIN kyc_cases AS k ON k.user_id = u.id WHERE u.id = ?
+      `, [registered.id]);
+      assert.deepEqual(created, { schemeId: first.id, hasWallet: 1, hasKyc: 1 });
+      const legacy = await request(`/customers/${customer}/resolution`, 200);
+      assert.equal(legacy.assignedScheme.id, "25");
+      assert.equal(legacy.effectiveScheme.id, first.id);
+
+      await Promise.all([setDefault("1"), setDefault(first.id), setDefault(second.id)]);
+      assert.ok(["1", first.id, second.id].includes(await readDefault()));
+      await setDefault(second.id);
+      await setStatus(first.id, "deactivate");
+      const after = await request(`/customers/${registered.id}/resolution`, 200);
+      assert.equal(after.assignedScheme.id, first.id);
+      assert.equal(after.effectiveScheme.id, second.id);
+      assert.equal(after.source, "default");
+    } finally {
+      await setDefault("1");
+      await setStatus(first.id, "deactivate");
+      await setStatus(second.id, "deactivate");
+    }
+    assert.equal(await readDefault(), "1");
   });
 });

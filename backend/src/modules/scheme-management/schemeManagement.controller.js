@@ -20,5 +20,12 @@ const cloneVersion = respond((req) => service.createDraft(req.params.schemeId, r
 const listServices = respond((req) => service.listServices(req.params.schemeId, req.params.versionId, req.query));
 const configureService = respond((req) =>
   service.configureService(req.params.schemeId, req.params.versionId, req.params.serviceId, req.body, req.user.id));
+const activateScheme = respond((req) => service.setSchemeStatus(req.params.schemeId, req.user.id, req.body, 1));
+const deactivateScheme = respond((req) => service.setSchemeStatus(req.params.schemeId, req.user.id, req.body, 0));
+const replaceDefault = respond((req) => service.replaceDefault(req.params.schemeId, req.user.id, req.body));
+const getCustomerResolution = respond((req) => service.getCustomerResolution(req.params.userId));
 
-export { listSchemes, getScheme, createScheme, updateScheme, listVersions, getVersion, createDraft, cloneVersion, listServices, configureService };
+export {
+  listSchemes, getScheme, createScheme, updateScheme, listVersions, getVersion, createDraft, cloneVersion, listServices,
+  configureService, activateScheme, deactivateScheme, replaceDefault, getCustomerResolution,
+};

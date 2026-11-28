@@ -64,10 +64,10 @@ function parseConfiguration(body) {
   return body.status;
 }
 
-function validateDraftAction(body) {
+function validateEmptyAction(body) {
   if (body !== undefined && (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).length)) {
-    throw new ApiError(400, "Draft actions do not accept fields");
+    throw new ApiError(400, "This action does not accept fields");
   }
 }
 
-export { parseId, parsePagination, parseCreate, parseUpdate, parseConfiguration, validateDraftAction };
+export { parseId, parsePagination, parseCreate, parseUpdate, parseConfiguration, validateEmptyAction };

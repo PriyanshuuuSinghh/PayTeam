@@ -2,6 +2,7 @@
 import pool from "../../config/db.js";
 import userModel from "../users/user.model.js";
 import ApiError from "../../utils/ApiError.js";
+import { requireDefaultScheme } from "../scheme-management/schemeResolution.js";
 
 const SAFE_USER_FIELDS = `u.id, u.name AS name, u.email, u.mobile,
   u.role_id, u.company_id, u.parent_id AS parent_id, u.status,
@@ -87,19 +88,14 @@ async function registerCustomer({ name, email, mobile, passwordHash }) {
   const connection = await getConnection();
   try {
     await connection.beginTransaction();
-    const [schemes] = await connection.execute(
-      "SELECT id FROM schemes WHERE id = 1 AND status = 1 FOR SHARE",
-    );
-    if (!schemes[0]) {
-      throw new ApiError(503, "Default customer scheme is unavailable", "SERVICE_UNAVAILABLE");
-    }
+    const schemeId = await requireDefaultScheme(connection);
     const duplicate = await userModel.checkDuplicateUser({ email, mobile }, connection);
     if (duplicate) {
       throw new ApiError(409, "An account with this email or mobile already exists", "DUPLICATE_ENTRY");
     }
     const userId = await userModel.insertUser({
       name, email, mobile, passwordHash,
-      roleId: 2, companyId: 1, schemeId: schemes[0].id, parentId: null,
+      roleId: 2, companyId: 1, schemeId, parentId: null,
     }, connection);
     await connection.execute("INSERT INTO user_wallets (user_id) VALUES (?)", [userId]);
     await userModel.initKycCaseForUser({ userId, actorId: userId }, connection);

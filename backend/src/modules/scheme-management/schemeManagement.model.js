@@ -3,6 +3,7 @@ import pool from "../../config/db.js";
 const ID = "CAST(CAST(? AS CHAR) AS UNSIGNED)";
   const SCHEME_FIELDS = `
     CAST(id AS CHAR) AS id, code, name, description, status,
+  EXISTS(SELECT 1 FROM scheme_default WHERE singleton_id = 1 AND scheme_id = schemes.id) AS isDefault,
     CAST(created_by AS CHAR) AS createdBy, CAST(updated_by AS CHAR) AS updatedBy,
     created_at AS createdAt, updated_at AS updatedAt
   `;
@@ -66,6 +67,15 @@ async function updateScheme(connection, id, { name, description }, actor) {
   await connection.execute(`UPDATE schemes SET name = ?, description = ?, updated_by = ${ID} WHERE id = ${ID}`,
     [name, description, actor, id]);
   return findScheme(id, connection);
+}
+
+async function updateSchemeStatus(connection, id, status, actor) {
+  await connection.execute(`UPDATE schemes SET status = ?, updated_by = ${ID} WHERE id = ${ID}`, [status, actor, id]);
+  return findScheme(id, connection);
+}
+
+async function updateDefault(connection, schemeId) {
+  await connection.execute(`UPDATE scheme_default SET scheme_id = ${ID} WHERE singleton_id = 1`, [schemeId]);
 }
 
 // The caller holds the parent scheme row lock before allocating a number.
@@ -136,6 +146,6 @@ async function transaction(work) {
 }
 
 export default {
-  listSchemes, listVersions, listServices, findScheme, findVersion, insertScheme, updateScheme, insertDraft,
+  listSchemes, listVersions, listServices, findScheme, findVersion, insertScheme, updateScheme, updateSchemeStatus, updateDefault, insertDraft,
   initializeServices, findMasterService, findLinkedService, saveLinkedService, appendAudit, transaction,
 };

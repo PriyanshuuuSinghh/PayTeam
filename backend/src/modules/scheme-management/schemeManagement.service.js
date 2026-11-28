@@ -1,6 +1,7 @@
 import ApiError from "../../utils/ApiError.js";
 import model from "./schemeManagement.model.js";
-import { parseId, parsePagination, parseCreate, parseUpdate, parseConfiguration, validateDraftAction } from "./schemeManagement.validator.js";
+import { requireDefaultScheme, resolveCustomerScheme } from "./schemeResolution.js";
+import { parseId, parsePagination, parseCreate, parseUpdate, parseConfiguration, validateEmptyAction } from "./schemeManagement.validator.js";
 
 async function database(work) {
   try {
@@ -77,6 +78,45 @@ function updateScheme(rawId, body, actor) {
   });
 }
 
+function setSchemeStatus(rawId, actor, body, status) {
+  const id = parseId(rawId, "scheme");
+  validateEmptyAction(body);
+  return write(async (connection) => {
+    const defaultId = await requireDefaultScheme(connection, { exclusive: true });
+    const current = await requireScheme(id, connection, true);
+    if (status === 0 && id === defaultId) throw new ApiError(409, "Replace the default scheme before deactivating it");
+    if (current.status === status) return current;
+    const updated = await model.updateSchemeStatus(connection, id, status, actor);
+    await model.appendAudit(connection, {
+      schemeId: id, actor, action: status === 1 ? "SCHEME_ACTIVATED" : "SCHEME_DEACTIVATED",
+      before: { status: current.status }, after: { status: updated.status },
+    });
+    return updated;
+  });
+}
+
+function replaceDefault(rawId, actor, body) {
+  const id = parseId(rawId, "scheme");
+  validateEmptyAction(body);
+  return write(async (connection) => {
+    const previousId = await requireDefaultScheme(connection, { exclusive: true });
+    const candidate = await requireScheme(id, connection, true);
+    if (candidate.status !== 1) throw new ApiError(409, "Only an active scheme can become the default");
+    if (id === previousId) return candidate;
+    await model.updateDefault(connection, id);
+    await model.appendAudit(connection, {
+      schemeId: id, actor, action: "DEFAULT_SCHEME_REPLACED",
+      before: { schemeId: previousId }, after: { schemeId: id },
+    });
+    return requireScheme(id, connection);
+  });
+}
+
+function getCustomerResolution(rawUserId) {
+  const userId = parseId(rawUserId, "customer");
+  return database(() => resolveCustomerScheme(userId));
+}
+
 function listVersions(rawId, query) {
   const schemeId = parseId(rawId, "scheme");
   const pagination = parsePagination(query);
@@ -95,7 +135,7 @@ function getVersion(rawId, rawVersionId) {
 function createDraft(rawId, actor, body, rawSourceVersionId) {
   const schemeId = parseId(rawId, "scheme");
   const sourceVersionId = rawSourceVersionId === undefined ? null : parseId(rawSourceVersionId, "version");
-  validateDraftAction(body);
+  validateEmptyAction(body);
   return write(async (connection) => {
     await requireScheme(schemeId, connection, true);
     if (sourceVersionId) await requireVersion(schemeId, sourceVersionId, connection, true);
@@ -136,4 +176,7 @@ function configureService(rawId, rawVersionId, rawServiceId, body, actor) {
   });
 }
 
-export { listSchemes, getScheme, createScheme, updateScheme, listVersions, getVersion, createDraft, listServices, configureService };
+export {
+  listSchemes, getScheme, createScheme, updateScheme, listVersions, getVersion, createDraft, listServices, configureService,
+  setSchemeStatus, replaceDefault, getCustomerResolution,
+};
